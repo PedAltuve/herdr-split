@@ -40,7 +40,8 @@ herdr-split ──► split the calling pane (right or down)
 poll `herdr agent get` until the agent is idle
    │
    ▼
-herdr agent prompt  ──►  split notice
+herdr pane run  ──►  split notice (typed + Enter; `agent prompt`
+                   only accepts agents started by `herdr agent start`)
 ```
 
 ## Source → target

@@ -67,7 +67,7 @@ test("launch: pi → claude opens a right split, starts claude, then submits the
 	assert.equal(out.pane, "w1:p7");
 	assert.equal(out.command, "claude");
 	assert.match(readFileSync(out.transcript, "utf8"), /build it/);
-	const prompt = await until(() => sb.readCalls().find((c) => c[0] === "agent" && c[1] === "prompt"));
+	const prompt = await until(() => sb.readCalls().filter((c) => c[0] === "pane" && c[1] === "run")[1]);
 	assert.equal(prompt[2], "w1:p7");
 	assert.match(prompt[3]!, /split of another conversation that is still in progress in Herdr pane w1:p1 \(gentle-shell\)/);
 	assert.match(prompt[3]!, new RegExp(`Read the transcript at ${out.transcript.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));

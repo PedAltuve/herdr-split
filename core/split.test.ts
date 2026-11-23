@@ -151,15 +151,15 @@ test("openSplitPane surfaces herdr errors", async () => {
 test("waitAndNotify polls until the agent is idle, then prompts it once", async () => {
 	const herdr = fakeHerdr({
 		"agent get": [new Error("agent_not_running"), { result: { agent: { agent_status: "unknown" } } }, { result: { agent: { agent_status: "idle" } } }],
-		"agent prompt": [{}],
+		"pane run": [{}],
 	});
 	await waitAndNotify(herdr, { pane: "w1:p9", notice: "hello", timeoutMs: 5000, intervalMs: 1 });
-	assert.deepEqual(herdr.calls.filter((c) => c[1] === "prompt"), [["agent", "prompt", "w1:p9", "hello"]]);
+	assert.deepEqual(herdr.calls.filter((c) => c[1] === "run"), [["pane", "run", "w1:p9", "hello"]]);
 	assert.equal(herdr.calls.filter((c) => c[1] === "get").length, 3);
 });
 
 test("waitAndNotify gives up without prompting when the agent never gets ready", async () => {
 	const herdr = fakeHerdr({ "agent get": [{ result: { agent: { agent_status: "working" } } }] });
 	await assert.rejects(waitAndNotify(herdr, { pane: "w1:p9", notice: "x", timeoutMs: 20, intervalMs: 1 }), /agent in w1:p9 was not ready after 20ms/);
-	assert.equal(herdr.calls.filter((c) => c[1] === "prompt").length, 0);
+	assert.equal(herdr.calls.filter((c) => c[1] === "run").length, 0);
 });

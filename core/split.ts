@@ -140,7 +140,11 @@ export async function openSplitPane(
 
 const READY = new Set(["idle", "done"]);
 
-/** Poll until Herdr sees a ready agent in `pane`, then submit the notice once. */
+/**
+ * Poll until Herdr sees a ready agent in `pane`, then submit the notice once.
+ * `herdr agent prompt` only accepts agents Herdr itself started with `agent start`, which
+ * cannot start gentle-shell, so the notice is typed with `pane run` (text + Enter).
+ */
 export async function waitAndNotify(
 	herdr: Herdr,
 	opts: { pane: string; notice: string; timeoutMs: number; intervalMs: number },
@@ -155,5 +159,5 @@ export async function waitAndNotify(
 		if (Date.now() >= deadline) throw new Error(`agent in ${opts.pane} was not ready after ${opts.timeoutMs}ms`);
 		await new Promise((r) => setTimeout(r, opts.intervalMs));
 	}
-	await call(herdr, ["agent", "prompt", opts.pane, opts.notice]);
+	await call(herdr, ["pane", "run", opts.pane, opts.notice]);
 }
