@@ -17,7 +17,7 @@ Shared Node core CLI plus thin adapters for Pi (gentle-shell, pi) and Claude Cod
 ## Tasks
 
 - T1 [S1, S8] core session readers (Pi, Claude) → turns; Claude truncated copy; transcript renderer — inline — commit: f275006 (done, 8 tests)
-- T2 [S2, S3, S4, S6, S7] core CLI: agent registry, dwindle split, launch, readiness polling, notice, `--pick` fzf flow — inline — commit: T2COMMIT
+- T2 [S2, S3, S4, S6, S7] core CLI: agent registry, dwindle split, launch, readiness polling, notice, `--pick` fzf flow — inline — commit: abebf36 (done, 20 tests)
 - T3 [S1, S5] Pi extension `/split` (native select + createBranchedSession) — inline — commit: pending
 - T4 [S5] Claude Code `/split` command, install script, README — inline — commit: pending
 
