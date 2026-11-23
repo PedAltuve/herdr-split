@@ -110,6 +110,19 @@ function ratio(values: Values): number {
 	return r;
 }
 
+/** The agent Herdr sees in the source pane (e.g. "gentle-shell"), unless given explicitly. */
+async function sourceAgent(values: Values, pane: string, kind: SourceKind): Promise<string> {
+	if (values["source-agent"]) return values["source-agent"];
+	const res = await herdr(["agent", "get", pane]);
+	try {
+		const name = JSON.parse(res.stdout)?.result?.agent?.agent;
+		if (res.code === 0 && typeof name === "string" && name) return name;
+	} catch {
+		// fall back to the session kind
+	}
+	return kind;
+}
+
 /** Start `notify` detached so the caller returns at once; its output goes to a log file. */
 function spawnNotify(pane: string, notice: string): string {
 	mkdirSync(outDir(), { recursive: true });
@@ -135,7 +148,7 @@ async function launch(values: Values): Promise<void> {
 	const cwd = session.cwd || process.cwd();
 	const target = prepareTarget({ agent, session, cutId, branched: values.branched, outDir: outDir() });
 	const pane = await openSplitPane(herdr, { sourcePane: src, cwd, command: target.command, ratio: ratio(values), focus: !values["no-focus"] });
-	const notice = splitNotice({ sourcePane: src, sourceAgent: values["source-agent"] || kind, cwd, transcript: target.transcript });
+	const notice = splitNotice({ sourcePane: src, sourceAgent: await sourceAgent(values, src, kind), cwd, transcript: target.transcript });
 	const log = spawnNotify(pane, notice);
 	console.log(JSON.stringify({ pane, agent: agent.name, command: target.command, transcript: target.transcript ?? null, log }));
 }
@@ -155,7 +168,7 @@ async function split(values: Values): Promise<void> {
 		"--source-kind", kind,
 		"--session", file,
 		"--source-pane", src,
-		"--source-agent", values["source-agent"] || kind,
+		"--source-agent", await sourceAgent(values, src, kind),
 	];
 	const command = args.map(shellQuote).join(" ");
 	const pane = await openSplitPane(herdr, { sourcePane: src, cwd, command, ratio: ratio(values), focus: !values["no-focus"] });
