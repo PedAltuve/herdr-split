@@ -92,3 +92,16 @@ test("missing fzf and herdr only warn on stderr", () => {
 		rmSync(tools, { recursive: true, force: true });
 	}
 });
+
+test("foreign stub differing in trailing newlines stays untouched", () => {
+	const p = stubs()[0]!;
+	mkdirSync(dirname(p), { recursive: true });
+	const foreign = stubOf + "\n";
+	writeFileSync(p, foreign);
+	const r = run();
+	assert.equal(r.code, 0);
+	assert.match(r.stdout, new RegExp(`^skip ${p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}: exists$`, "m"));
+	assert.equal(readFileSync(p, "utf8"), foreign);
+	assert.equal(run("--uninstall").code, 0);
+	assert.equal(readFileSync(p, "utf8"), foreign);
+});

@@ -122,7 +122,8 @@ function claudeEntry(row: Record<string, unknown>): PathEntry {
 
 function buildTurns(path: PathEntry[]): Turn[] {
 	const turns: Turn[] = [];
-	const splitAt = path.findIndex((e) => e.role === "user" && isSplitCommand(e.text));
+	// Drop only the trailing /split invocation (the one running now); earlier ones stay in their turn.
+	const splitAt = path.findLastIndex((e) => e.role === "user" && isSplitCommand(e.text));
 	const usable = splitAt >= 0 ? path.slice(0, splitAt) : path;
 	usable.forEach((entry, i) => {
 		if (entry.prompt) {

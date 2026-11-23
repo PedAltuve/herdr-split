@@ -28,7 +28,8 @@ link() { # link <target> <path>
 }
 
 stub_file() { # stub_file <path>
-	if [ -f "$1" ] && [ ! -L "$1" ] && [ "$(cat "$1")" = "$stub" ]; then
+	# Byte-exact ownership check: $(cat) would strip trailing newlines and claim near-copies.
+	if [ -f "$1" ] && [ ! -L "$1" ] && printf '%s\n' "$stub" | cmp -s - "$1"; then
 		if [ "$mode" = install ]; then printf '%s\n' "$stub" > "$1"; echo "write $1"
 		else rm "$1"; rmdir "$(dirname "$1")" 2>/dev/null || true; echo "remove $1"; fi
 		return 0
