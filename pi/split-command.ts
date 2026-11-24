@@ -1,27 +1,31 @@
 /** Pure logic of Pi's /split: pick agent and turn, optionally branch natively, delegate to the core CLI. */
 import { readSession } from "../core/sessions.ts";
 import { slashUsage } from "../core/help.ts";
-import { listAgents, resolveAgent } from "../core/split.ts";
+import { listAgents, resolveAgent, type Agent } from "../core/split.ts";
 
-/** Agents for hints only: a broken agents.json falls back to the built-ins (running /split still reports it). */
-function hintAgents(configFile: string | undefined) {
+/**
+ * Agents for hints only: an unreadable or malformed agents.json falls back to the built-ins so
+ * /split still registers; `problem` says why (running /split reports the error too).
+ */
+function hintAgents(configFile: string | undefined): { agents: Agent[]; problem?: string } {
 	try {
-		return listAgents(configFile);
-	} catch {
-		return listAgents();
+		return { agents: listAgents(configFile) };
+	} catch (error) {
+		return { agents: listAgents(), problem: `ignoring ${configFile}: ${error instanceof Error ? error.message : String(error)}` };
 	}
 }
 
 /** What Pi registers for /split: description and completions both list the configured agents. */
 export function splitCommandInfo(configFile: string | undefined) {
+	const { agents, problem } = hintAgents(configFile);
 	return {
-		description: `Branch this conversation into another agent in a new Herdr pane: ${slashUsage(hintAgents(configFile))}`,
+		description: `Branch this conversation into another agent in a new Herdr pane: ${slashUsage(agents)}${problem ? ` (${problem})` : ""}`,
 		getArgumentCompletions: (prefix: string) => agentCompletions(prefix, configFile),
 	};
 }
 
 export function agentCompletions(prefix: string, configFile?: string): { value: string; label: string }[] | null {
-	const items = hintAgents(configFile)
+	const items = hintAgents(configFile).agents
 		.filter((a) => a.name.startsWith(prefix))
 		.map((a) => ({ value: a.name, label: a.name }));
 	return items.length ? items : null;
