@@ -1,0 +1,4 @@
+#!/bin/sh
+# herdr-split: branch an agent conversation into a new Herdr pane. See README.md.
+here=$(dirname "$(readlink -f "$0")")
+exec node "$here/../core/cli.ts" "$@"

@@ -1,0 +1,10 @@
+{
+  "name": "herdr-split",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Branch an agent conversation into a new Herdr pane with /split",
+  "bin": { "herdr-split": "./bin/herdr-split" },
+  "scripts": { "test": "node --test" },
+  "engines": { "node": ">=23.6" }
+}
