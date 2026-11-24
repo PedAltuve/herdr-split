@@ -81,6 +81,12 @@ export const COMMANDS: CommandDoc[] = [
 
 const PUBLIC = COMMANDS.filter((c) => !c.internal);
 
+export function optionDoc(name: string): OptionDoc {
+	const doc = OPTION_DOCS[name];
+	if (!doc) throw new Error(`undocumented option --${name}`);
+	return doc;
+}
+
 /** The synopsis lines of the public commands, as in the README CLI reference. */
 export function synopsis(): string[] {
 	return PUBLIC.flatMap((c) => c.synopsis);

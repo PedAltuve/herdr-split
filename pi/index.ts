@@ -6,7 +6,7 @@ import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { agentCompletions, runSplit, splitDescription } from "./split-command.ts";
+import { runSplit, splitCommandInfo } from "./split-command.ts";
 
 const BIN = join(dirname(realpathSync(fileURLToPath(import.meta.url))), "..", "bin", "herdr-split");
 
@@ -31,8 +31,7 @@ export default function (pi: ExtensionAPI) {
 
 	const configFile = join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "herdr-split", "agents.json");
 	pi.registerCommand("split", {
-		description: splitDescription(configFile),
-		getArgumentCompletions: (prefix) => agentCompletions(prefix, configFile),
+		...splitCommandInfo(configFile),
 		handler: async (args, ctx) => {
 			const sessionFile = ctx.sessionManager.getSessionFile();
 			if (!sessionFile) {

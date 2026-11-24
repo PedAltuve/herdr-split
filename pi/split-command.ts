@@ -3,12 +3,25 @@ import { readSession } from "../core/sessions.ts";
 import { slashUsage } from "../core/help.ts";
 import { listAgents, resolveAgent } from "../core/split.ts";
 
-export function splitDescription(configFile: string | undefined): string {
-	return `Branch this conversation into another agent in a new Herdr pane: ${slashUsage(listAgents(configFile))}`;
+/** Agents for hints only: a broken agents.json falls back to the built-ins (running /split still reports it). */
+function hintAgents(configFile: string | undefined) {
+	try {
+		return listAgents(configFile);
+	} catch {
+		return listAgents();
+	}
+}
+
+/** What Pi registers for /split: description and completions both list the configured agents. */
+export function splitCommandInfo(configFile: string | undefined) {
+	return {
+		description: `Branch this conversation into another agent in a new Herdr pane: ${slashUsage(hintAgents(configFile))}`,
+		getArgumentCompletions: (prefix: string) => agentCompletions(prefix, configFile),
+	};
 }
 
 export function agentCompletions(prefix: string, configFile?: string): { value: string; label: string }[] | null {
-	const items = listAgents(configFile)
+	const items = hintAgents(configFile)
 		.filter((a) => a.name.startsWith(prefix))
 		.map((a) => ({ value: a.name, label: a.name }));
 	return items.length ? items : null;

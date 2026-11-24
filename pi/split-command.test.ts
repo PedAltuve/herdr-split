@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agentCompletions, runSplit, splitDescription, type SplitDeps } from "./split-command.ts";
+import { agentCompletions, runSplit, splitCommandInfo, type SplitDeps } from "./split-command.ts";
 
 const jsonl = (rows: unknown[]) => rows.map((r) => JSON.stringify(r)).join("\n") + "\n";
 
@@ -65,11 +65,19 @@ function config(): string {
 	return f;
 }
 
-test("completions and the description include agents from agents.json", () => {
-	const cfg = config();
-	assert.deepEqual(agentCompletions("a", cfg)?.map((i) => i.value), ["aider"]);
-	assert.equal(splitDescription(cfg), "Branch this conversation into another agent in a new Herdr pane: /split <aider|claude|codex|gentle|pi>");
-	assert.equal(splitDescription(undefined), "Branch this conversation into another agent in a new Herdr pane: /split <claude|codex|gentle|pi>");
+test("the registered /split completions and description include agents from agents.json", () => {
+	const info = splitCommandInfo(config());
+	assert.deepEqual(info.getArgumentCompletions("a")?.map((i) => i.value), ["aider"]);
+	assert.equal(info.description, "Branch this conversation into another agent in a new Herdr pane: /split <aider|claude|codex|gentle|pi>");
+	assert.equal(splitCommandInfo(undefined).description, "Branch this conversation into another agent in a new Herdr pane: /split <claude|codex|gentle|pi>");
+});
+
+test("a malformed agents.json does not break registering /split", () => {
+	const f = join(mkdtempSync(join(tmpdir(), "herdr-split-cfg-")), "agents.json");
+	writeFileSync(f, "{ not json");
+	const info = splitCommandInfo(f);
+	assert.equal(info.description, "Branch this conversation into another agent in a new Herdr pane: /split <claude|codex|gentle|pi>");
+	assert.deepEqual(info.getArgumentCompletions("g")?.map((i) => i.value), ["gentle"]);
 });
 
 test("/split gentle: picks a turn newest-first, branches the Pi session natively and launches", async () => {
@@ -122,4 +130,10 @@ test("launch failures are reported", async () => {
 	const { d, log } = deps({ launch: async () => { throw new Error("herdr pane split failed: no room"); } });
 	await runSplit("claude", d);
 	assert.deepEqual(log.notify, [["/split failed: herdr pane split failed: no room", "error"]]);
+});
+
+test("the extension registers /split with splitCommandInfo for the agents.json path", () => {
+	const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+	assert.match(source, /registerCommand\("split", \{\n\t\t\.\.\.splitCommandInfo\(configFile\),/);
+	assert.match(source, /const configFile = join\(process\.env\.XDG_CONFIG_HOME \|\| join\(homedir\(\), "\.config"\), "herdr-split", "agents\.json"\);/);
 });

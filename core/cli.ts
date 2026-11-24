@@ -203,6 +203,8 @@ export async function main(argv: string[]): Promise<number> {
 	try {
 		const { values, positionals } = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
 		const [command] = positionals;
+		if ((values.json || values.slash) && command !== "help" && !values.help) throw new UsageError("--json and --slash only work with help");
+		if (values.json && values.slash) throw new UsageError("--json and --slash cannot be combined");
 		if (command === "help" || values.help) {
 			const agents = listAgents(configFile());
 			if (values.json) console.log(JSON.stringify(helpJson(agents), null, 2));

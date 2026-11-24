@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { OPTIONS } from "./cli.ts";
-import { COMMANDS, synopsis } from "./help.ts";
+import { COMMANDS, optionDoc, synopsis } from "./help.ts";
 import { listAgents } from "./split.ts";
 
 const BIN = fileURLToPath(new URL("../bin/herdr-split", import.meta.url));
@@ -78,6 +78,33 @@ test("an unknown or missing command prints the generated usage line and exits 2"
 test("drift: the parser accepts exactly the options the table documents", () => {
 	const documented = new Set(COMMANDS.flatMap((c) => c.options.map((o) => o.name)));
 	assert.deepEqual([...documented].sort(), Object.keys(OPTIONS).sort());
+	for (const [name, o] of Object.entries(OPTIONS) as [string, { type: string; default?: unknown; short?: string }][]) {
+		const doc = optionDoc(name);
+		assert.equal(doc.value !== undefined, o.type === "string", `--${name}: value placeholder vs parser type`);
+		assert.equal(doc.default, o.type === "string" ? o.default : undefined, `--${name}: default`);
+		assert.equal(doc.short, o.short ? `-${o.short}` : undefined, `--${name}: short flag`);
+	}
+});
+
+test("help-only output flags are rejected elsewhere and cannot be combined", () => {
+	const cases: [string[], string][] = [
+		[["agents", "--json"], "herdr-split: --json and --slash only work with help\n"],
+		[["agents", "--slash"], "herdr-split: --json and --slash only work with help\n"],
+		[["split", "--json", "--agent", "pi"], "herdr-split: --json and --slash only work with help\n"],
+		[["help", "--json", "--slash"], "herdr-split: --json and --slash cannot be combined\n"],
+	];
+	for (const [args, stderr] of cases) {
+		const r = run(...args);
+		assert.equal(r.status, 2, args.join(" "));
+		assert.equal(r.stdout, "");
+		assert.equal(r.stderr, stderr);
+	}
+});
+
+test("agents without help flags keeps its output", () => {
+	const r = run("agents");
+	assert.equal(r.status, 0);
+	assert.equal(r.stdout, "aider\taider\nclaude\tclaude\ncodex\tcodex\ngentle\tgentle-shell\npi\tpi\n");
 });
 
 test("drift: the README CLI reference matches the table", () => {
