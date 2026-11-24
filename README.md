@@ -90,11 +90,15 @@ herdr-split launch --agent <name> --source-kind pi|claude --session <file> --cut
 herdr-split split  --agent <name> --source-kind pi|claude (--session <file> | --session-id <id>)
                    [--source-agent <name>] [--ratio 0.5] [--no-focus]
 herdr-split agents
+herdr-split help [--json | --slash]
 ```
 
-- `launch`: the adapter already chose the branch point (Pi).
-- `split`: pick the branch point with `fzf` in the new pane (Claude Code).
-- `agents`: list known agents.
+- `launch`: Split at a branch point the adapter already chose (Pi).
+- `split`: Split and pick the branch point with fzf in the new pane (Claude Code).
+- `agents`: List the known agents and the command each one runs.
+- `help`: Show this help, as JSON, or as the /split usage line.
+
+`herdr-split help` (or `--help`, `-h`) lists every option and the known agents, including those from `agents.json`. `herdr-split help --json` gives the same as JSON, so an agent can learn the tool by running it. This section is checked against that help by `core/help.test.ts`.
 
 ## Uninstall
 
