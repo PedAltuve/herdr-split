@@ -91,7 +91,10 @@ test("help-only output flags are rejected elsewhere and cannot be combined", () 
 		[["agents", "--json"], "herdr-split: --json and --slash only work with help\n"],
 		[["agents", "--slash"], "herdr-split: --json and --slash only work with help\n"],
 		[["split", "--json", "--agent", "pi"], "herdr-split: --json and --slash only work with help\n"],
+		[["--json"], "herdr-split: --json and --slash only work with help\n"],
+		[["--slash"], "herdr-split: --json and --slash only work with help\n"],
 		[["help", "--json", "--slash"], "herdr-split: --json and --slash cannot be combined\n"],
+		[["--help", "--json", "--slash"], "herdr-split: --json and --slash cannot be combined\n"],
 	];
 	for (const [args, stderr] of cases) {
 		const r = run(...args);
