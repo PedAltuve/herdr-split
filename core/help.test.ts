@@ -123,3 +123,10 @@ test("drift: the README usage shows /split with exactly the built-in agents", ()
 	const shown = [...usage.matchAll(/^\/split (\S+)/gm)].map((m) => m[1]).sort();
 	assert.deepEqual(shown, listAgents().map((a) => a.name));
 });
+
+test("--help with --json after another command prints the help JSON", () => {
+	const r = run("agents", "--help", "--json");
+	assert.equal(r.status, 0);
+	assert.equal(r.stderr, "");
+	assert.equal(r.stdout, run("help", "--json").stdout);
+});
