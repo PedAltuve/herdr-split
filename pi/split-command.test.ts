@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agentCompletions, runSplit, type SplitDeps } from "./split-command.ts";
+import { agentCompletions, runSplit, splitDescription, type SplitDeps } from "./split-command.ts";
 
 const jsonl = (rows: unknown[]) => rows.map((r) => JSON.stringify(r)).join("\n") + "\n";
 
@@ -57,6 +57,19 @@ test("completions list the known agents by prefix", () => {
 	assert.deepEqual(agentCompletions("g").map((i) => i.value), ["gentle"]);
 	assert.deepEqual(agentCompletions("").map((i) => i.value), ["claude", "codex", "gentle", "pi"]);
 	assert.equal(agentCompletions("zz"), null);
+});
+
+function config(): string {
+	const f = join(mkdtempSync(join(tmpdir(), "herdr-split-cfg-")), "agents.json");
+	writeFileSync(f, JSON.stringify({ aider: { exec: "aider", format: null } }));
+	return f;
+}
+
+test("completions and the description include agents from agents.json", () => {
+	const cfg = config();
+	assert.deepEqual(agentCompletions("a", cfg)?.map((i) => i.value), ["aider"]);
+	assert.equal(splitDescription(cfg), "Branch this conversation into another agent in a new Herdr pane: /split <aider|claude|codex|gentle|pi>");
+	assert.equal(splitDescription(undefined), "Branch this conversation into another agent in a new Herdr pane: /split <claude|codex|gentle|pi>");
 });
 
 test("/split gentle: picks a turn newest-first, branches the Pi session natively and launches", async () => {

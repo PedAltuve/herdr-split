@@ -27,6 +27,7 @@ Links `herdr-split` into `~/.local/bin`, adds the `/split` extension to your Pi 
 
 - From **Pi / gentle-shell**: a native picker asks for the branch point.
 - From **Claude Code**: the new pane opens an `fzf` picker for the branch point.
+- Without an agent name, Pi asks for one and Claude Code replies with the usage. Both list the agents from `herdr-split agents`, including your `agents.json` ones.
 
 ## What happens
 

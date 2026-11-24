@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { OPTIONS } from "./cli.ts";
 import { COMMANDS, synopsis } from "./help.ts";
+import { listAgents } from "./split.ts";
 
 const BIN = fileURLToPath(new URL("../bin/herdr-split", import.meta.url));
 const README = fileURLToPath(new URL("../README.md", import.meta.url));
@@ -85,4 +86,10 @@ test("drift: the README CLI reference matches the table", () => {
 	const block = section.split("```")[1]!.replace(/^\n/, "");
 	assert.equal(block, synopsis().join("\n") + "\n");
 	for (const c of COMMANDS.filter((c) => !c.internal)) assert.ok(section.includes(`- \`${c.name}\`: ${c.summary}`), `README misses ${c.name}`);
+});
+
+test("drift: the README usage shows /split with exactly the built-in agents", () => {
+	const usage = readFileSync(README, "utf8").split("## Usage")[1]!.split("\n## ")[0]!;
+	const shown = [...usage.matchAll(/^\/split (\S+)/gm)].map((m) => m[1]).sort();
+	assert.deepEqual(shown, listAgents().map((a) => a.name));
 });

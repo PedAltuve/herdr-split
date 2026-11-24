@@ -1,9 +1,14 @@
 /** Pure logic of Pi's /split: pick agent and turn, optionally branch natively, delegate to the core CLI. */
 import { readSession } from "../core/sessions.ts";
+import { slashUsage } from "../core/help.ts";
 import { listAgents, resolveAgent } from "../core/split.ts";
 
-export function agentCompletions(prefix: string): { value: string; label: string }[] | null {
-	const items = listAgents()
+export function splitDescription(configFile: string | undefined): string {
+	return `Branch this conversation into another agent in a new Herdr pane: ${slashUsage(listAgents(configFile))}`;
+}
+
+export function agentCompletions(prefix: string, configFile?: string): { value: string; label: string }[] | null {
+	const items = listAgents(configFile)
 		.filter((a) => a.name.startsWith(prefix))
 		.map((a) => ({ value: a.name, label: a.name }));
 	return items.length ? items : null;
