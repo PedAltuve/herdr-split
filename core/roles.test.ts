@@ -67,3 +67,9 @@ test("checkName accepts the documented pattern only", () => {
 	assert.equal(checkName(undefined), undefined);
 	for (const bad of ["", "Bad", "9a", "a.b", "a b", "a".repeat(33)]) assert.throws(() => checkName(bad), (e) => e instanceof UsageError && e.message === `--name must match ^[a-z][a-z0-9_-]{0,31}$, got "${bad}"`);
 });
+
+test("an agent named like a built-in role shadows it instead of failing", () => {
+	const agents = [...listAgents(), { name: "judge", exec: "judge-cli", format: null }];
+	const roles = listRoles(undefined, agents);
+	assert.equal(roles.some((r) => r.name === "judge"), false);
+});

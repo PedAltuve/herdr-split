@@ -189,3 +189,12 @@ test("/split with an invalid name, a bad role or too many words reports it and l
 		assert.equal(log.selectOptions, undefined);
 	}
 });
+
+test("an agents.json agent named judge still registers /split, without the built-in judge role", () => {
+	const f = join(mkdtempSync(join(tmpdir(), "herdr-split-cfg-")), "agents.json");
+	writeFileSync(f, JSON.stringify({ judge: { exec: "judge-cli", format: null } }));
+	const info = splitCommandInfo(f);
+	assert.doesNotMatch(info.description, /ignoring/);
+	assert.match(info.description, /judge/);
+	assert.deepEqual(info.getArgumentCompletions("ju")?.map((i) => i.value), ["judge"]);
+});

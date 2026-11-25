@@ -32,18 +32,17 @@ export function checkName(name: string | undefined): string | undefined {
 
 /** Built-in roles plus `{ "<role>": { "agent"?: "<agent>", "prompt": "<text>" } }` from the config file. */
 export function listRoles(rolesFile: string | undefined, agents: Agent[]): Role[] {
-	const roles: Record<string, Omit<Role, "name">> = { ...BUILTIN };
+	// A user agent named like a built-in role shadows that role; only roles.json clashes are errors.
+	const roles: Record<string, Omit<Role, "name">> = Object.fromEntries(Object.entries(BUILTIN).filter(([name]) => !agents.some((a) => a.name === name)));
 	if (rolesFile && existsSync(rolesFile)) {
 		const extra = JSON.parse(readFileSync(rolesFile, "utf8")) as Record<string, { agent?: unknown; prompt?: unknown }>;
 		for (const [name, value] of Object.entries(extra)) {
 			if (!NAME_RE.test(name)) throw new UsageError(`Role name "${name}" must match ${NAME_PATTERN} (roles.json)`);
+			if (agents.some((a) => a.name === name)) throw new UsageError(`Role "${name}" has the same name as an agent; rename it in roles.json`);
 			if (typeof value?.prompt !== "string" || !value.prompt.trim()) throw new UsageError(`Role "${name}" needs a prompt (roles.json)`);
 			if (value.agent !== undefined && !agents.some((a) => a.name === value.agent)) throw new UsageError(`Role "${name}" uses unknown agent "${String(value.agent)}" (roles.json)`);
 			roles[name] = { agent: value.agent as string | undefined, prompt: value.prompt };
 		}
-	}
-	for (const name of Object.keys(roles)) {
-		if (agents.some((a) => a.name === name)) throw new UsageError(`Role "${name}" has the same name as an agent; rename it in roles.json`);
 	}
 	return Object.keys(roles)
 		.sort()

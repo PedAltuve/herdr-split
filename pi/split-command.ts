@@ -21,7 +21,11 @@ function hints(configFile: string | undefined, rolesFile: string | undefined): {
 	try {
 		roles = listRoles(rolesFile, agents);
 	} catch (error) {
-		roles = listRoles(undefined, agents);
+		try {
+			roles = listRoles(undefined, agents);
+		} catch {
+			roles = [];
+		}
 		problems.push(`ignoring ${rolesFile}: ${error instanceof Error ? error.message : String(error)}`);
 	}
 	return { agents, roles, problem: problems.length ? problems.join("; ") : undefined };
