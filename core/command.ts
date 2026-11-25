@@ -16,9 +16,12 @@ export interface SplitCommand {
 	prompt?: string;
 }
 
-/** Collapse whitespace runs to one space; blank means no prompt. Over the limit is a UsageError. */
+/**
+ * Remove C0 control characters (and DEL) other than whitespace, collapse whitespace runs to one space;
+ * blank means no prompt. Over the limit is a UsageError.
+ */
 export function normalizePrompt(text: string | undefined): string | undefined {
-	const prompt = (text ?? "").replace(/\s+/g, " ").trim();
+	const prompt = (text ?? "").replace(/[\x00-\x08\x0e-\x1f\x7f]/g, "").replace(/\s+/g, " ").trim();
 	if (!prompt) return undefined;
 	if (prompt.length > PROMPT_LIMIT) throw new UsageError(`The prompt is ${prompt.length} characters long; the limit is ${PROMPT_LIMIT}`);
 	return prompt;
@@ -26,8 +29,9 @@ export function normalizePrompt(text: string | undefined): string | undefined {
 
 /**
  * The first word is an agent or a role. After an agent, the next word is a role only when it names a
- * known role; otherwise it starts the prompt. `--name <name>` (or `--name=<name>`) is read only before
- * the prompt starts; from the first prompt word on, everything is literal prompt text.
+ * known role; otherwise it starts the prompt. `--name <name>` (or `--name=<name>`) is the only option
+ * and is read only before the prompt starts; any other word starting with `-` starts the prompt, and
+ * from the first prompt word on, everything is literal prompt text.
  */
 export function parseSplitCommand(text: string, agents: Agent[], roles: Role[]): SplitCommand {
 	const tokens = text.split(/\s+/).filter(Boolean);
@@ -41,7 +45,7 @@ export function parseSplitCommand(text: string, agents: Agent[], roles: Role[]):
 			if (!value) throw new UsageError("--name needs a value");
 			if (out.name !== undefined) throw new UsageError("--name can be given only once");
 			out.name = value;
-		} else if (t.startsWith("--")) throw new UsageError(`Unknown option "${t.split("=")[0]}"`);
+		} else if (t.startsWith("-")) break;
 		else if (out.agent === undefined) out.agent = t;
 		else if (!decided && agents.some((a) => a.name === out.agent) && roles.some((r) => r.name === t)) {
 			out.role = t;

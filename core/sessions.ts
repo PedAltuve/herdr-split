@@ -120,16 +120,20 @@ function claudeEntry(row: Record<string, unknown>): PathEntry {
 	return { id, role: "user", prompt: text.trim().length > 0 && !isSplitCommand(text), text, toolCalls, raw: row };
 }
 
+const SPLIT_MARKUP = /^\s*(?:<command-message>[^<]*<\/command-message>\s*)?<command-name>\/split<\/command-name>(?:\s*<command-args>([\s\S]*?)<\/command-args>)?\s*$/;
+
 /**
- * The `<command-args>` of the last `/split` the user typed, as Claude Code records it in the
- * transcript (`<command-message>split</command-message>\n<command-name>/split</command-name>\n<command-args>…</command-args>`)
- * before the command runs. Undefined when the conversation has no such entry.
+ * The `<command-args>` of the `/split` the user just typed, as Claude Code records it in the transcript
+ * (`<command-message>split</command-message>\n<command-name>/split</command-name>\n<command-args>…</command-args>`)
+ * before the command runs. Only the last user entry on the path counts, and its text must be exactly that
+ * markup (whitespace aside); otherwise undefined, so an older /split or pasted markup is never replayed.
  */
 export function lastSplitArgs(session: Session): string | undefined {
 	if (session.kind !== "claude") throw new Error("lastSplitArgs needs a Claude session");
-	const entry = session.path.findLast((e) => e.role === "user" && /^\s*(<command-message>[^<]*<\/command-message>\s*)?<command-name>\/split<\/command-name>/.test(e.text));
+	const entry = session.path.findLast((e) => e.role === "user");
 	if (!entry) return undefined;
-	return /<command-args>([\s\S]*)<\/command-args>/.exec(entry.text)?.[1] ?? "";
+	const match = SPLIT_MARKUP.exec(entry.text);
+	return match ? (match[1] ?? "") : undefined;
 }
 
 function buildTurns(path: PathEntry[]): Turn[] {

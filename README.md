@@ -40,11 +40,11 @@ Links `herdr-split` into `~/.local/bin`, adds the `/split` extension to your Pi 
 `/split <agent|role> [<role>] [--name <name>] [<prompt>]`: everything after the agent (and the optional role and `--name`) is a prompt for the new agent.
 
 - The first word is an agent or a role. The second word is a role only when it names a known role (`/split gentle judge ...`); otherwise it starts the prompt (`/split gentle haz un judge del PR X`).
-- `--name <name>` is read only before the prompt; from the first prompt word on, everything (including `--name`) is literal prompt text.
+- `--name <name>` is read only before the prompt; from the first prompt word on, everything (including `--name`) is literal prompt text. Any other word starting with `-` (for example `/split gentle --security`) starts the prompt too. Control characters (Ctrl-U, ESC, …) are removed from the prompt.
 - The prompt is collapsed to one line (whitespace runs become one space) and may be at most 4000 characters; a longer one exits 2 before any pane is touched.
 - The split notice then ends with the prompt as the instruction to act on now instead of "confirm and wait". With a role, the role's instruction comes first and the prompt follows as additional instruction. The rule not to act on earlier messages and the warning about the original conversation changing files stay.
 - On the CLI it is `--prompt <text>` (`launch`, `split`; `pick` carries it to the new pane single-quoted). Pi passes it with `execFile`, so no shell sees it.
-- Claude Code: the command file runs one fixed Bash command with no user text, `herdr-split split ... --args-from-transcript`, and the core reads the `<command-args>` of the last `/split` entry in the session transcript and parses them with the same parser. Empty or invalid arguments print the `/split` usage and exit 2 without touching a pane.
+- Claude Code: the command file runs one fixed Bash command with no user text, `herdr-split split ... --args-from-transcript`, and the core reads the `<command-args>` of the last user entry in the session transcript, which must be exactly the `/split` invocation (an older `/split`, or markup with text after it, is refused), and parses them with the same parser. Empty or invalid arguments print the `/split` usage and exit 2 without touching a pane.
 
 ## Names
 

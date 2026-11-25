@@ -50,7 +50,21 @@ test("S2: a prompt longer than the limit is rejected, the limit itself is accept
 test("S1 preserve: the errors the old Pi parser gave still hold", () => {
 	fails("gentle --name", "--name needs a value");
 	fails("gentle --name=", "--name needs a value");
-	fails("gentle --bogus", 'Unknown option "--bogus"');
 	fails("gentle --name a --name b", "--name can be given only once");
 	fails("gentle --name a' --name b", "--name can be given only once");
+});
+
+test("S1: any other word starting with - starts the prompt; --name stays the only option before it", () => {
+	assert.deepEqual(parse("gentle --security"), { agent: "gentle", prompt: "--security" });
+	assert.deepEqual(parse("gentle --bogus=1 revisa"), { agent: "gentle", prompt: "--bogus=1 revisa" });
+	assert.deepEqual(parse("gentle -x y"), { agent: "gentle", prompt: "-x y" });
+	assert.deepEqual(parse("gentle --name rev --security"), { agent: "gentle", name: "rev", prompt: "--security" });
+	assert.deepEqual(parse("gentle judge --security"), { agent: "gentle", role: "judge", prompt: "--security" });
+	assert.deepEqual(parse("--security"), { prompt: "--security" });
+});
+
+test("S2: C0 control characters and DEL are removed from the prompt, whitespace still collapses", () => {
+	assert.deepEqual(parse("gentle a\x15b\x03c\x1b[31md\x7fe\x00f"), { agent: "gentle", prompt: "abc[31mdef" });
+	assert.deepEqual(parse("gentle a\x0bb\x0cc\r\nd\te"), { agent: "gentle", prompt: "a b c d e" });
+	assert.deepEqual(parse("gentle \x15\x03"), { agent: "gentle" });
 });

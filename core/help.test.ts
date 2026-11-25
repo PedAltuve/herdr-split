@@ -136,6 +136,13 @@ test("drift: the README usage shows /split with exactly the built-in agents and 
 	assert.deepEqual(shown, [...listAgents().map((a) => a.name), ...listRoles(undefined, listAgents()).map((r) => r.name)].sort());
 	assert.match(usage, /^\/split \S+ \S+/m);
 	assert.match(usage, /--name <name>|--name \w+/);
+	// an example line that ends in a free-text prompt: a word that is not an agent, role, option or option value
+	const words = new Set([...listAgents().map((a) => a.name), ...listRoles(undefined, listAgents()).map((r) => r.name)]);
+	const withPrompt = usage.split("\n").filter((l) => /^\/split \S+/.test(l)).map((l) => l.replace(/\s+#.*$/, "").trim().split(/\s+/).slice(1)).filter((t) => {
+		const rest = t.filter((w, i) => !(w === "--name" || t[i - 1] === "--name"));
+		return rest.length >= 2 && !words.has(rest[rest.length - 1]!) && !rest[rest.length - 1]!.startsWith("--");
+	});
+	assert.ok(withPrompt.length > 0, "README usage needs an example ending in a free-text prompt");
 });
 
 test("drift: the README documents roles.json and every option the table lists", () => {

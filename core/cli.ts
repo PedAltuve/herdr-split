@@ -175,10 +175,10 @@ function argsFromTranscript(values: Values, kind: SourceKind, file: string): Val
 	}
 	if (kind !== "claude") throw new UsageError("--args-from-transcript needs --source-kind claude");
 	const args = lastSplitArgs(readSession(kind, file));
-	if (args === undefined) throw new UsageError("No /split invocation found in the Claude Code transcript");
 	const agents = listAgents(configFile());
 	const roles = listRoles(configFile("roles.json"), agents);
 	const usage = `usage: ${slashUsage(agents, roles)}`;
+	if (args === undefined) throw new UsageError(`The last user message in the Claude Code transcript is not a /split invocation\nherdr-split: ${usage}`);
 	if (!args.trim()) throw new UsageError(usage);
 	try {
 		const parsed = parseSplitCommand(args, agents, roles);
@@ -292,6 +292,8 @@ export async function main(argv: string[]): Promise<number> {
 		const values = single(parsed.values);
 		const [command] = positionals;
 		if ((values.json || values.slash) && command !== "help" && !values.help) throw new UsageError("--json and --slash only work with help");
+		if (values["args-from-transcript"] && command !== "split" && command !== "help" && !values.help) throw new UsageError("--args-from-transcript only works with split");
+		if (values["prompt-file"] !== undefined && command !== "pick" && command !== "help" && !values.help) throw new UsageError("--prompt-file only works with pick");
 		if (values.json && values.slash) throw new UsageError("--json and --slash cannot be combined");
 		if (command === "help" || values.help) {
 			const agents = listAgents(configFile());
