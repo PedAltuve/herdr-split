@@ -292,8 +292,8 @@ export async function main(argv: string[]): Promise<number> {
 		const values = single(parsed.values);
 		const [command] = positionals;
 		if ((values.json || values.slash) && command !== "help" && !values.help) throw new UsageError("--json and --slash only work with help");
-		if (values["args-from-transcript"] && command !== "split" && command !== "help" && !values.help) throw new UsageError("--args-from-transcript only works with split");
-		if (values["prompt-file"] !== undefined && command !== "pick" && command !== "help" && !values.help) throw new UsageError("--prompt-file only works with pick");
+		if (values["args-from-transcript"] && command !== "split") throw new UsageError("--args-from-transcript only works with split");
+		if (values["prompt-file"] !== undefined && command !== "pick") throw new UsageError("--prompt-file only works with pick");
 		if (values.json && values.slash) throw new UsageError("--json and --slash cannot be combined");
 		if (command === "help" || values.help) {
 			const agents = listAgents(configFile());

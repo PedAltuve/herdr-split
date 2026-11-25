@@ -120,7 +120,7 @@ function claudeEntry(row: Record<string, unknown>): PathEntry {
 	return { id, role: "user", prompt: text.trim().length > 0 && !isSplitCommand(text), text, toolCalls, raw: row };
 }
 
-const SPLIT_MARKUP = /^\s*(?:<command-message>[^<]*<\/command-message>\s*)?<command-name>\/split<\/command-name>(?:\s*<command-args>([\s\S]*?)<\/command-args>)?\s*$/;
+const SPLIT_MARKUP = /^\s*(?:<command-message>[^<]*<\/command-message>\s*)?<command-name>\/split<\/command-name>(?:\s*<command-args>((?:(?!<\/?command-args>)[\s\S])*)<\/command-args>)?\s*$/;
 
 /**
  * The `<command-args>` of the `/split` the user just typed, as Claude Code records it in the transcript
@@ -130,10 +130,16 @@ const SPLIT_MARKUP = /^\s*(?:<command-message>[^<]*<\/command-message>\s*)?<comm
  */
 export function lastSplitArgs(session: Session): string | undefined {
 	if (session.kind !== "claude") throw new Error("lastSplitArgs needs a Claude session");
-	const entry = session.path.findLast((e) => e.role === "user");
+	// A tool-result entry that also carries user text is a newer user message, not a tool echo.
+	const entry = session.path.findLast((e) => e.role === "user" || (e.role === "tool" && hasUserText(e)));
 	if (!entry) return undefined;
 	const match = SPLIT_MARKUP.exec(entry.text);
 	return match ? (match[1] ?? "") : undefined;
+}
+
+function hasUserText(entry: PathEntry): boolean {
+	const msg = (entry.raw as { message?: { content?: unknown } }).message;
+	return blocks(msg?.content).some((b) => b.type === "text" && String(b.text ?? "").trim().length > 0);
 }
 
 function buildTurns(path: PathEntry[]): Turn[] {
