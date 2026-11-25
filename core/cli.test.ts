@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -497,7 +497,8 @@ test("S4: split --prompt hands the prompt to the picker command, single-quoted",
 	const res = spawnSync(BIN, ["split", "--agent", "gentle", "--source-kind", "claude", "--session-id", "sid", "--source-agent", "claude", "--prompt", "it's a \"test\""], { env: { ...sb.env, CLAUDE_CONFIG_DIR: claudeHome(sb, [hi]) }, encoding: "utf8" });
 	assert.equal(res.status, 0, res.stderr);
 	const run = sb.readCalls().find((c) => c[1] === "run")!;
-	assert.match(run[3]!, / '--source-agent' 'claude' '--prompt' 'it'\\''s a "test"'$/);
+	assert.match(run[3]!, / '--source-agent' 'claude' '--prompt-file' '[^']+'$/);
+	assert.doesNotMatch(run[3]!, /'--prompt' |test/);
 });
 
 test("S4 preserve: split without a prompt passes no --prompt to the picker", () => {
@@ -530,14 +531,14 @@ test("S3: --args-from-transcript reads the last /split of the Claude transcript 
 	assert.equal(res.stdout, "herdr-split: pick the branch point in pane w1:p7; gentle starts there after you choose.\n");
 	const calls = sb.readCalls();
 	assert.deepEqual(calls[2], ["pane", "rename", "w1:p7", "rev"]);
-	assert.match(calls[3]![3]!, /'pick' '--agent' 'gentle' '--role' 'judge' '--name' 'rev' '--source-kind' 'claude' .* '--source-agent' 'claude' '--prompt' 'revisa el PR 4'$/);
+	assert.match(calls[3]![3]!, /'pick' '--agent' 'gentle' '--role' 'judge' '--name' 'rev' '--source-kind' 'claude' .* '--source-agent' 'claude' '--prompt-file' '[^']+'$/);
 });
 
 test("S3: --args-from-transcript reads content-array transcripts too", () => {
 	const sb = sandbox();
 	const res = fromTranscript(sb, [hi, slashEntry("s1", "u", "claude haz algo", "array")]);
 	assert.equal(res.status, 0, res.stderr);
-	assert.match(sb.readCalls()[2]![3]!, /'--agent' 'claude' .* '--prompt' 'haz algo'$/);
+	assert.match(sb.readCalls()[2]![3]!, /'--agent' 'claude' .* '--prompt-file' '[^']+'$/);
 });
 
 test("S3: --args-from-transcript with a plain /split gentle behaves as before (no prompt, no name)", () => {
@@ -666,4 +667,38 @@ test("S4: a prompt starting with a single dash is accepted as --prompt <text>", 
 	assert.equal(res.status, 0, res.stderr);
 	await until(() => (runs(sb).length === 2 ? true : undefined));
 	assert.match(runs(sb)[1]![3]!, /to act on now: - fix the bug$/);
+});
+
+const HOSTILE = ["\\' ; touch CANARY #", "a\\\\b", "ends with a backslash \\"];
+
+test("R1: the typed pick command carries no prompt text; the prompt file is owner-only and removed by pick", async () => {
+	for (const prompt of HOSTILE) {
+		const sb = sandbox();
+		const res = spawnSync(BIN, ["split", "--agent", "codex", "--source-kind", "pi", "--session", canarySession(sb), "--source-agent", "gentle-shell", "--prompt", prompt], { env: sb.env, encoding: "utf8" });
+		assert.equal(res.status, 0, res.stderr);
+		const command = sb.readCalls().find((c) => c[1] === "run")![3]!;
+		assert.doesNotMatch(command, /'--prompt' |CANARY|ends with/);
+		const file = /'--prompt-file' '([^']+)'$/.exec(command)![1]!;
+		assert.equal(statSync(file).mode & 0o777, 0o600);
+		assert.equal(readFileSync(file, "utf8"), prompt);
+		const typed = typedCommand(sb);
+		assert.equal(typed.run().status, 0);
+		const notice = (await until(() => runs(sb).find((c) => c[2] === "w1:p1")))[3]!;
+		assert.ok(notice.endsWith(`to act on now: ${prompt}`), notice);
+		assert.equal(existsSync(file), false);
+		assert.equal(existsSync(join(sb.dir, "CANARY")), false);
+	}
+});
+
+test("R1: fish runs the typed pick command without breaking out of the quoting", { skip: spawnSync("fish", ["--version"]).error !== undefined }, async () => {
+	const sb = sandbox();
+	const res = spawnSync(BIN, ["split", "--agent", "codex", "--source-kind", "pi", "--session", canarySession(sb), "--source-agent", "gentle-shell", "--prompt", HOSTILE[0]!], { env: sb.env, encoding: "utf8" });
+	assert.equal(res.status, 0, res.stderr);
+	const typed = typedCommand(sb);
+	const command = sb.readCalls().find((c) => c[1] === "run")![3]!;
+	const r = spawnSync("fish", ["--no-config", "-c", command], { cwd: sb.dir, env: { ...sb.env, PATH: `${typed.bindir}:${process.env.PATH}` }, encoding: "utf8" });
+	assert.equal(r.status, 0, r.stderr);
+	const notice = (await until(() => runs(sb).find((c) => c[2] === "w1:p1")))[3]!;
+	assert.ok(notice.endsWith(`to act on now: ${HOSTILE[0]}`), notice);
+	assert.equal(existsSync(join(sb.dir, "CANARY")), false);
 });

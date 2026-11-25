@@ -18,6 +18,7 @@ const OPTION_DOCS: Record<string, OptionDoc> = {
 	role: { value: "<name>", description: "Role for the new split: its prompt tells the agent what to do. Without an agent, the role's agent (else the source agent) is used." },
 	name: { value: "<name>", description: "Name of the split: labels the pane and the agent, and the notice tells the agent. Must match ^[a-z][a-z0-9_-]{0,31}$." },
 	prompt: { value: "<text>", description: "Instruction for the new agent to act on now, sent with the split notice. One line (whitespace collapsed), at most 4000 characters." },
+	"prompt-file": { value: "<file>", description: "Internal: read the prompt from this file and delete it (how split hands the prompt to pick without typing it into a shell)." },
 	"args-from-transcript": { description: "Read the /split arguments (agent, role, --name, prompt) from the last /split in the Claude Code transcript instead of --agent/--role/--name/--prompt; invalid or empty arguments print the /split usage and exit 2." },
 	"source-kind": { value: "pi|claude", description: "Session format of the conversation being split." },
 	session: { value: "<file>", description: "Session file of the conversation being split." },
@@ -83,7 +84,7 @@ export const COMMANDS: CommandDoc[] = [
 		summary: "Show this help, as JSON, or as the /split usage line.",
 		options: [{ name: "json" }, { name: "slash" }, { name: "help" }],
 	},
-	{ name: "pick", synopsis: [], summary: "Choose the branch point with fzf, then start the agent.", options: [{ name: "source-pane" }, { name: "role" }, { name: "name" }, { name: "prompt" }], internal: true },
+	{ name: "pick", synopsis: [], summary: "Choose the branch point with fzf, then start the agent.", options: [{ name: "source-pane" }, { name: "role" }, { name: "name" }, { name: "prompt" }, { name: "prompt-file" }], internal: true },
 	{ name: "notify", synopsis: [], summary: "Submit the split notice once the agent is ready.", options: [{ name: "pane" }, { name: "notice-file" }, { name: "timeout" }, { name: "name" }], internal: true },
 ];
 

@@ -4,7 +4,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,6 +81,7 @@ export const OPTIONS = {
 	role: { type: "string", multiple: true },
 	name: { type: "string", multiple: true },
 	prompt: { type: "string" },
+	"prompt-file": { type: "string" },
 	"args-from-transcript": { type: "boolean", default: false },
 	"source-kind": { type: "string" },
 	session: { type: "string" },
@@ -210,6 +211,13 @@ async function split(values: Values): Promise<void> {
 	const cwd = session.cwd || process.cwd();
 	const source = await sourceAgent(values, src, kind);
 	const agent = resolved ?? sourceAgentFor(source, kind, configFile());
+	// The prompt never enters the typed command (an interactive shell such as fish parses it): it goes through an owner-only file.
+	let promptFile: string | undefined;
+	if (prompt) {
+		mkdirSync(outDir(), { recursive: true, mode: 0o700 });
+		promptFile = join(outDir(), `${Date.now()}-${process.pid}-prompt.txt`);
+		writeFileSync(promptFile, prompt, { flag: "wx", mode: 0o600 });
+	}
 	const args = [
 		process.execPath, CLI, "pick",
 		"--agent", agent.name,
@@ -219,7 +227,7 @@ async function split(values: Values): Promise<void> {
 		"--session", file,
 		"--source-pane", src,
 		"--source-agent", source,
-		...(prompt ? ["--prompt", prompt] : []),
+		...(promptFile ? ["--prompt-file", promptFile] : []),
 	];
 	const command = args.map(shellQuote).join(" ");
 	const pane = await openSplitPane(herdr, { sourcePane: src, cwd, command, ratio: ratio(values), focus: !values["no-focus"], name });
@@ -230,7 +238,12 @@ async function split(values: Values): Promise<void> {
 async function pick(values: Values): Promise<number> {
 	const { agent: resolved, role, name } = target(values);
 	const agent = resolved!;
-	const prompt = normalizePrompt(values.prompt);
+	let prompt = normalizePrompt(values.prompt);
+	if (values["prompt-file"]) {
+		const text = readFileSync(values["prompt-file"], "utf8");
+		unlinkSync(values["prompt-file"]);
+		prompt = normalizePrompt(text);
+	}
 	const kind = sourceKind(values["source-kind"]);
 	const src = required(values, "source-pane");
 	const self = sourcePane(undefined);
