@@ -10,7 +10,7 @@ import { runSplit, splitCommandInfo } from "./split-command.ts";
 
 const BIN = join(dirname(realpathSync(fileURLToPath(import.meta.url))), "..", "bin", "herdr-split");
 
-function launchCli(args: string[], cwd: string): Promise<{ pane: string; command: string }> {
+function launchCli(args: string[], cwd: string): Promise<{ pane: string; command: string; agent?: string }> {
 	return new Promise((resolve, reject) => {
 		execFile(BIN, args, { cwd, encoding: "utf8" }, (error, stdout, stderr) => {
 			if (error) {
@@ -30,8 +30,9 @@ export default function (pi: ExtensionAPI) {
 	if (process.env.GENTLE_PI_AGENTS_CHILD === "1") return;
 
 	const configFile = join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "herdr-split", "agents.json");
+	const rolesFile = join(dirname(configFile), "roles.json");
 	pi.registerCommand("split", {
-		...splitCommandInfo(configFile),
+		...splitCommandInfo(configFile, rolesFile),
 		handler: async (args, ctx) => {
 			const sessionFile = ctx.sessionManager.getSessionFile();
 			if (!sessionFile) {
@@ -43,6 +44,7 @@ export default function (pi: ExtensionAPI) {
 				sessionFile,
 				leafId: ctx.sessionManager.getLeafId() ?? undefined,
 				configFile,
+				rolesFile,
 				select: (title, options) => ctx.ui.select(title, options),
 				notify: (msg, level) => ctx.ui.notify(msg, level),
 				// A separate manager keeps the live session untouched.
