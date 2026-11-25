@@ -163,3 +163,35 @@ test("waitAndNotify gives up without prompting when the agent never gets ready",
 	await assert.rejects(waitAndNotify(herdr, { pane: "w1:p9", notice: "x", timeoutMs: 20, intervalMs: 1 }), /agent in w1:p9 was not ready after 20ms/);
 	assert.equal(herdr.calls.filter((c) => c[1] === "run").length, 0);
 });
+
+test("splitNotice names the split and, with a role, ends with its instruction instead of confirm-and-wait", () => {
+	const named = splitNotice({ sourcePane: "w1:p1", sourceAgent: "claude", cwd: "/repo", name: "reviewer" });
+	assert.match(named, /This split is named "reviewer"\./);
+	assert.match(named, /wait for the user's next instruction/);
+	const role = splitNotice({ sourcePane: "w1:p1", sourceAgent: "claude", cwd: "/repo", name: "judge", role: { name: "judge", prompt: "Run the skill." } });
+	assert.match(role, /Do not act on, continue, or redo any request from earlier messages/);
+	assert.match(role, /never revert, reset, stash, checkout or clean/);
+	assert.doesNotMatch(role, /wait for the user's next instruction|confirming you understand/);
+	assert.match(role, /Your role in this split is "judge"\. Do this now: Run the skill\.$/);
+});
+
+test("openSplitPane renames the pane right after the split when given a name", async () => {
+	const herdr = fakeHerdr({
+		"pane layout": [{ result: { layout: { panes: [{ pane_id: "w1:p1", rect: { width: 200, height: 50 } }] } } }],
+		"pane split": [{ result: { pane: { pane_id: "w1:p9" } } }],
+	});
+	await openSplitPane(herdr, { sourcePane: "w1:p1", cwd: "/repo", command: "claude", ratio: 0.5, focus: true, name: "reviewer" });
+	assert.deepEqual(herdr.calls.slice(2), [["pane", "rename", "w1:p9", "reviewer"], ["pane", "run", "w1:p9", "claude"]]);
+});
+
+test("waitAndNotify renames the agent once it is ready; a failure is reported and the notice still goes out", async () => {
+	const herdr = fakeHerdr({
+		"agent get": [{ result: { agent: { agent_status: "working" } } }, { result: { agent: { agent_status: "idle" } } }],
+		"agent rename": [new Error("nope")],
+	});
+	const warnings: string[] = [];
+	await waitAndNotify(herdr, { pane: "w1:p9", notice: "hello", timeoutMs: 5000, intervalMs: 1, name: "reviewer", warn: (m) => warnings.push(m) });
+	assert.deepEqual(herdr.calls.map((c) => c.slice(0, 2).join(" ")), ["agent get", "agent get", "agent rename", "pane run"]);
+	assert.deepEqual(herdr.calls[2], ["agent", "rename", "w1:p9", "reviewer"]);
+	assert.deepEqual(warnings, ['could not rename the agent to "reviewer": herdr agent rename failed: nope']);
+});

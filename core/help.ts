@@ -3,6 +3,7 @@
  * usage error and the adapters' `/split` usage come from this table. Drift tests keep the CLI
  * parser and the README in line with it.
  */
+import type { Role } from "./roles.ts";
 import type { Agent } from "./split.ts";
 
 interface OptionDoc {
@@ -13,7 +14,9 @@ interface OptionDoc {
 }
 
 const OPTION_DOCS: Record<string, OptionDoc> = {
-	agent: { value: "<name>", description: "Agent to start in the new pane (see `herdr-split agents`)." },
+	agent: { value: "<name>", description: "Agent to start in the new pane (see `herdr-split agents`), or a role (see `herdr-split roles`)." },
+	role: { value: "<name>", description: "Role for the new split: its prompt tells the agent what to do. Without an agent, the role's agent (else the source agent) is used." },
+	name: { value: "<name>", description: "Name of the split: labels the pane and the agent, and the notice tells the agent. Must match ^[a-z][a-z0-9_-]{0,31}$." },
 	"source-kind": { value: "pi|claude", description: "Session format of the conversation being split." },
 	session: { value: "<file>", description: "Session file of the conversation being split." },
 	"session-id": { value: "<id>", description: "Claude Code session id; its file is found under ~/.claude/projects." },
@@ -40,14 +43,15 @@ export interface CommandDoc {
 	internal?: boolean;
 }
 
-const SPLIT_OPTIONS = [{ name: "source-agent" }, { name: "ratio" }, { name: "no-focus" }];
+const SPLIT_OPTIONS = [{ name: "role" }, { name: "name" }, { name: "source-agent" }, { name: "ratio" }, { name: "no-focus" }];
 
 export const COMMANDS: CommandDoc[] = [
 	{
 		name: "launch",
 		synopsis: [
 			"herdr-split launch --agent <name> --source-kind pi|claude --session <file> --cut <id>",
-			"                   [--branched <file>] [--source-agent <name>] [--ratio 0.5] [--no-focus]",
+			"                   [--branched <file>] [--role <name>] [--name <name>] [--source-agent <name>]",
+			"                   [--ratio 0.5] [--no-focus]",
 		],
 		summary: "Split at a branch point the adapter already chose (Pi).",
 		options: [
@@ -63,20 +67,21 @@ export const COMMANDS: CommandDoc[] = [
 		name: "split",
 		synopsis: [
 			"herdr-split split  --agent <name> --source-kind pi|claude (--session <file> | --session-id <id>)",
-			"                   [--source-agent <name>] [--ratio 0.5] [--no-focus]",
+			"                   [--role <name>] [--name <name>] [--source-agent <name>] [--ratio 0.5] [--no-focus]",
 		],
 		summary: "Split and pick the branch point with fzf in the new pane (Claude Code).",
 		options: [{ name: "agent", required: true }, { name: "source-kind", required: true }, { name: "session" }, { name: "session-id" }, ...SPLIT_OPTIONS],
 	},
 	{ name: "agents", synopsis: ["herdr-split agents"], summary: "List the known agents and the command each one runs.", options: [] },
+	{ name: "roles", synopsis: ["herdr-split roles"], summary: "List the known roles, the agent each uses and its prompt.", options: [] },
 	{
 		name: "help",
 		synopsis: ["herdr-split help [--json | --slash]"],
 		summary: "Show this help, as JSON, or as the /split usage line.",
 		options: [{ name: "json" }, { name: "slash" }, { name: "help" }],
 	},
-	{ name: "pick", synopsis: [], summary: "Choose the branch point with fzf, then start the agent.", options: [{ name: "source-pane" }], internal: true },
-	{ name: "notify", synopsis: [], summary: "Submit the split notice once the agent is ready.", options: [{ name: "pane" }, { name: "notice-file" }, { name: "timeout" }], internal: true },
+	{ name: "pick", synopsis: [], summary: "Choose the branch point with fzf, then start the agent.", options: [{ name: "source-pane" }, { name: "role" }, { name: "name" }], internal: true },
+	{ name: "notify", synopsis: [], summary: "Submit the split notice once the agent is ready.", options: [{ name: "pane" }, { name: "notice-file" }, { name: "timeout" }, { name: "name" }], internal: true },
 ];
 
 const PUBLIC = COMMANDS.filter((c) => !c.internal);
@@ -98,8 +103,10 @@ export function usageLine(): string {
 }
 
 /** How to call /split from an agent, with the agents that can be split into. */
-export function slashUsage(agents: Agent[]): string {
-	return `/split <${agents.map((a) => a.name).join("|")}>`;
+export function slashUsage(agents: Agent[], roles: Role[]): string {
+	const agentList = agents.map((a) => a.name).join("|");
+	const roleList = roles.map((r) => r.name).join("|");
+	return `/split <${[agentList, roleList].filter(Boolean).join("|")}> [<role>] [--name <name>] (agents: ${agentList}; roles: ${roleList})`;
 }
 
 function flag(name: string): string {
@@ -107,7 +114,7 @@ function flag(name: string): string {
 	return `${doc.short ? `${doc.short}, ` : ""}--${name}${doc.value ? ` ${doc.value}` : ""}`;
 }
 
-export function helpText(agents: Agent[]): string {
+export function helpText(agents: Agent[], roles: Role[]): string {
 	const width = Math.max(...PUBLIC.map((c) => c.name.length)) + 2;
 	const used = new Set(PUBLIC.flatMap((c) => c.options.map((o) => o.name)));
 	const names = Object.keys(OPTION_DOCS).filter((n) => used.has(n));
@@ -128,16 +135,17 @@ export function helpText(agents: Agent[]): string {
 		}),
 		"",
 		`Agents: ${agents.map((a) => a.name).join(", ")}`,
-		`From an agent: ${slashUsage(agents)}`,
+		`Roles: ${roles.map((r) => r.name).join(", ")}`,
+		`From an agent: ${slashUsage(agents, roles)}`,
 		"",
 	].join("\n");
 }
 
-export function helpJson(agents: Agent[]) {
+export function helpJson(agents: Agent[], roles: Role[]) {
 	return {
 		name: "herdr-split",
 		description: "Branch an agent conversation at a chosen message into a new Herdr pane running another agent.",
-		slashCommand: slashUsage(agents),
+		slashCommand: slashUsage(agents, roles),
 		commands: PUBLIC.map((c) => ({
 			name: c.name,
 			synopsis: c.synopsis.map((l) => l.trim()).join(" ").replace(/\s+/g, " "),
@@ -148,5 +156,6 @@ export function helpJson(agents: Agent[]) {
 			}),
 		})),
 		agents: agents.map((a) => ({ name: a.name, exec: a.exec, format: a.format })),
+		roles: roles.map((r) => ({ name: r.name, agent: r.agent, prompt: r.prompt })),
 	};
 }

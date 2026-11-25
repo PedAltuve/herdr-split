@@ -8,6 +8,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderTranscript, writeClaudeBranch, type Session, type SourceKind } from "./sessions.ts";
 
+/** A mistake in what the user asked for or configured; the CLI exits 2 on it. */
+export class UsageError extends Error {}
+
 export interface Agent {
 	name: string;
 	/** Shell command that starts the agent; branch arguments are appended. */
@@ -54,15 +57,26 @@ export function shellQuote(value: string): string {
 	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-export function splitNotice(opts: { sourcePane: string; sourceAgent: string; cwd: string; transcript?: string }): string {
+export function splitNotice(opts: {
+	sourcePane: string;
+	sourceAgent: string;
+	cwd: string;
+	transcript?: string;
+	name?: string;
+	/** Its prompt replaces the "confirm and wait" ending. */
+	role?: { name: string; prompt: string };
+}): string {
 	const parts = [
 		`[herdr-split] This conversation is a split of another conversation that is still in progress in Herdr pane ${opts.sourcePane} (${opts.sourceAgent}).`,
+		...(opts.name ? [`This split is named "${opts.name}".`] : []),
 		opts.transcript
 			? `Read the transcript at ${opts.transcript} first: it is that conversation up to the point the user branched from.`
 			: "Everything above was copied from it up to the point the user branched from.",
 		"Do not act on, continue, or redo any request from earlier messages: the original conversation owns them.",
 		`The original conversation is probably still changing files in ${opts.cwd}: re-read files before you rely on them, avoid editing the files it is working on, and never revert, reset, stash, checkout or clean changes you did not make.`,
-		"Reply with one short line confirming you understand, then wait for the user's next instruction.",
+		opts.role
+			? `Your role in this split is "${opts.role.name}". Do this now: ${opts.role.prompt}`
+			: "Reply with one short line confirming you understand, then wait for the user's next instruction.",
 	];
 	return parts.join(" ");
 }
@@ -115,7 +129,7 @@ async function call(herdr: Herdr, args: string[]): Promise<any> {
 /** Split the source pane (dwindle), then run `command` in the new pane. Returns its id. */
 export async function openSplitPane(
 	herdr: Herdr,
-	opts: { sourcePane: string; cwd: string; command: string; ratio: number; focus: boolean },
+	opts: { sourcePane: string; cwd: string; command: string; ratio: number; focus: boolean; name?: string; warn?: (message: string) => void },
 ): Promise<string> {
 	const layout = await call(herdr, ["pane", "layout", "--pane", opts.sourcePane]);
 	const panes: { pane_id: string; rect: { width: number; height: number } }[] = layout?.result?.layout?.panes ?? [];
@@ -134,8 +148,20 @@ export async function openSplitPane(
 	]);
 	const pane = split?.result?.pane?.pane_id;
 	if (typeof pane !== "string") throw new Error("herdr pane split returned no pane id");
+	if (opts.name) {
+		// Best effort: the pane exists, so a label that fails must not stop the agent from starting.
+		try {
+			await call(herdr, ["pane", "rename", pane, opts.name]);
+		} catch (error) {
+			(opts.warn ?? warnToStderr)(`could not rename pane ${pane} to "${opts.name}": ${(error as Error).message}`);
+		}
+	}
 	await call(herdr, ["pane", "run", pane, opts.command]);
 	return pane;
+}
+
+function warnToStderr(message: string): void {
+	console.error(`herdr-split: ${message}`);
 }
 
 const READY = new Set(["idle", "done"]);
@@ -147,7 +173,7 @@ const READY = new Set(["idle", "done"]);
  */
 export async function waitAndNotify(
 	herdr: Herdr,
-	opts: { pane: string; notice: string; timeoutMs: number; intervalMs: number },
+	opts: { pane: string; notice: string; timeoutMs: number; intervalMs: number; name?: string; warn?: (message: string) => void },
 ): Promise<void> {
 	const deadline = Date.now() + opts.timeoutMs;
 	for (;;) {
@@ -158,6 +184,13 @@ export async function waitAndNotify(
 		}
 		if (Date.now() >= deadline) throw new Error(`agent in ${opts.pane} was not ready after ${opts.timeoutMs}ms`);
 		await new Promise((r) => setTimeout(r, opts.intervalMs));
+	}
+	if (opts.name) {
+		try {
+			await call(herdr, ["agent", "rename", opts.pane, opts.name]);
+		} catch (error) {
+			(opts.warn ?? warnToStderr)(`could not rename the agent to "${opts.name}": ${(error as Error).message}`);
+		}
 	}
 	await call(herdr, ["pane", "run", opts.pane, opts.notice]);
 }
