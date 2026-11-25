@@ -217,3 +217,18 @@ test("a repeated --name is rejected before anything is picked or launched", asyn
 		assert.deepEqual(log.notify, [["--name can be given only once", "error"]], args);
 	}
 });
+
+test("a malformed roles.json does not break registering /split and is reported once, naming the file", () => {
+	const f = join(mkdtempSync(join(tmpdir(), "herdr-split-cfg-")), "roles.json");
+	writeFileSync(f, "{ not json");
+	const info = splitCommandInfo(undefined, f);
+	assert.match(info.description, /: \/split <claude\|codex\|gentle\|pi\|judge> .*roles: judge\)/);
+	assert.equal(info.description.split(f).length, 2, info.description);
+	assert.deepEqual(info.getArgumentCompletions("g")?.map((i) => i.value), ["gentle"]);
+});
+
+test("a malformed agents.json names the file once in the /split description", () => {
+	const f = join(mkdtempSync(join(tmpdir(), "herdr-split-cfg-")), "agents.json");
+	writeFileSync(f, "{ not json");
+	assert.equal(splitCommandInfo(f).description.split(f).length, 2);
+});

@@ -77,8 +77,8 @@ export function findClaudeSession(id: string): string {
 
 export const OPTIONS = {
 	agent: { type: "string" },
-	role: { type: "string" },
-	name: { type: "string" },
+	role: { type: "string", multiple: true },
+	name: { type: "string", multiple: true },
 	"source-kind": { type: "string" },
 	session: { type: "string" },
 	"session-id": { type: "string" },
@@ -96,7 +96,14 @@ export const OPTIONS = {
 	help: { type: "boolean", short: "h", default: false },
 } as const;
 
-type Values = ReturnType<typeof parseArgs<{ options: typeof OPTIONS; allowPositionals: true }>>["values"];
+type Parsed = ReturnType<typeof parseArgs<{ options: typeof OPTIONS; allowPositionals: true }>>["values"];
+type Values = Omit<Parsed, "name" | "role"> & { name?: string; role?: string };
+
+/** --name and --role take one value; repeating them is a usage error rather than "last wins". */
+function single(values: Parsed): Values {
+	for (const flag of ["name", "role"] as const) if ((values[flag]?.length ?? 0) > 1) throw new UsageError(`--${flag} can be given only once`);
+	return { ...values, name: values.name?.[0], role: values.role?.[0] };
+}
 
 function required(values: Values, name: keyof Values): string {
 	const v = values[name];
@@ -218,7 +225,9 @@ async function notify(values: Values): Promise<void> {
 
 export async function main(argv: string[]): Promise<number> {
 	try {
-		const { values, positionals } = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
+		const parsed = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
+		const { positionals } = parsed;
+		const values = single(parsed.values);
 		const [command] = positionals;
 		if ((values.json || values.slash) && command !== "help" && !values.help) throw new UsageError("--json and --slash only work with help");
 		if (values.json && values.slash) throw new UsageError("--json and --slash cannot be combined");
@@ -240,7 +249,7 @@ export async function main(argv: string[]): Promise<number> {
 		return 0;
 	} catch (error) {
 		console.error(`herdr-split: ${(error as Error).message}`);
-		return error instanceof UsageError || /^Unknown agent/.test((error as Error).message) || (error as { code?: string }).code?.startsWith("ERR_PARSE_ARGS") ? 2 : 1;
+		return error instanceof UsageError || (error as { code?: string }).code?.startsWith("ERR_PARSE_ARGS") ? 2 : 1;
 	}
 }
 

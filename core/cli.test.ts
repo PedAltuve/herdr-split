@@ -338,3 +338,75 @@ test("pick: names the agent after readiness and submits the role notice", async 
 	assert.match(run[3]!, /named "reviewer"[\s\S]*judgment-day/);
 	assert.ok(sb.readCalls().some((c) => c.join(" ") === "agent rename w1:p1 reviewer"));
 });
+
+test("S1: a malformed roles.json or agents.json exits 2 naming the file, before any pane operation", () => {
+	for (const [file, content, shown] of [["roles.json", "{ not json", /^.+/], ["agents.json", "{ not json", /^.+/], ["roles.json", "[]", /^expected a JSON object$/], ["agents.json", "3", /^expected a JSON object$/]] as const) {
+		const sb = sandbox();
+		mkdirSync(join(sb.dir, "cfg", "herdr-split"), { recursive: true });
+		const path = join(sb.dir, "cfg", "herdr-split", file);
+		writeFileSync(path, content);
+		for (const args of [launchArgs(sb, "--agent", "claude"), ["help"], ["roles"], ...(file === "agents.json" ? [["agents"]] : [])]) {
+			const res = spawnSync(BIN, args, { env: sb.env, encoding: "utf8" });
+			assert.equal(res.status, 2, `${file} ${args[0]}`);
+			assert.equal(res.stdout, "");
+			assert.ok(res.stderr.startsWith(`herdr-split: Cannot read ${path}: `), res.stderr);
+			assert.match(res.stderr.slice(`herdr-split: Cannot read ${path}: `.length).trimEnd(), shown);
+			assert.equal(res.stderr.trimEnd().split("\n").length, 1);
+			assert.deepEqual(sb.readCalls(), []);
+		}
+	}
+});
+
+test("S1 preserve: valid roles.json and agents.json still work together", () => {
+	const sb = sandbox();
+	writeConfig(sb, "agents.json", { opencode: { exec: "opencode" } });
+	writeConfig(sb, "roles.json", { critic: { agent: "opencode", prompt: "Critique." } });
+	const res = spawnSync(BIN, ["roles"], { env: sb.env, encoding: "utf8" });
+	assert.equal(res.status, 0, res.stderr);
+	assert.match(res.stdout, /^critic\topencode\tCritique\.\n/);
+});
+
+test("S2: repeating --name or --role exits 2 before any pane operation", () => {
+	const cases: [string[], string][] = [
+		[["--agent", "claude", "--name", "a", "--name", "b"], "herdr-split: --name can be given only once\n"],
+		[["--agent", "claude", "--name=a", "--name", "b"], "herdr-split: --name can be given only once\n"],
+		[["--agent", "claude", "--role", "judge", "--role", "judge"], "herdr-split: --role can be given only once\n"],
+	];
+	for (const [extra, stderr] of cases) {
+		for (const command of ["launch", "split"]) {
+			const sb = sandbox();
+			const args = command === "launch" ? launchArgs(sb, ...extra) : ["split", "--source-kind", "claude", "--session-id", "sid", ...extra];
+			const res = spawnSync(BIN, args, { env: sb.env, encoding: "utf8" });
+			assert.equal(res.status, 2, `${command} ${extra.join(" ")}`);
+			assert.equal(res.stdout, "");
+			assert.equal(res.stderr, stderr);
+			assert.deepEqual(sb.readCalls(), []);
+		}
+	}
+});
+
+test("S2 preserve: a single --name and --role still work", () => {
+	const sb = sandbox();
+	const res = spawnSync(BIN, launchArgs(sb, "--agent", "claude", "--role", "judge", "--name", "pr-judge"), { env: sb.env, encoding: "utf8" });
+	assert.equal(res.status, 0, res.stderr);
+	assert.deepEqual(sb.readCalls()[2], ["pane", "rename", "w1:p7", "pr-judge"]);
+});
+
+test("S3: an unknown agent still exits 2 with the same message on split", () => {
+	const sb = sandbox();
+	const res = spawnSync(BIN, ["split", "--agent", "vim", "--source-kind", "claude", "--session-id", "sid"], { env: sb.env, encoding: "utf8" });
+	assert.equal(res.status, 2);
+	assert.equal(res.stderr, 'herdr-split: Unknown agent "vim". Known agents: claude, codex, gentle, pi. Known roles: judge\n');
+	assert.deepEqual(sb.readCalls(), []);
+});
+
+test("S4: a multi-line role prompt reaches herdr pane run as one line", async () => {
+	const sb = sandbox();
+	writeConfig(sb, "roles.json", { critic: { prompt: "Critique the plan.\n\n  Be brief." } });
+	const res = spawnSync(BIN, launchArgs(sb, "--agent", "claude", "--role", "critic"), { env: sb.env, encoding: "utf8" });
+	assert.equal(res.status, 0, res.stderr);
+	await until(() => (runs(sb).length === 2 ? true : undefined));
+	const notice = runs(sb)[1]![3]!;
+	assert.doesNotMatch(notice, /\n/);
+	assert.match(notice, /Do this now: Critique the plan\. Be brief\.$/);
+});

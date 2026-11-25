@@ -4,7 +4,9 @@ import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	listAgents,
 	resolveAgent,
+	UsageError,
 	splitDirection,
 	splitNotice,
 	prepareTarget,
@@ -194,4 +196,34 @@ test("waitAndNotify renames the agent once it is ready; a failure is reported an
 	assert.deepEqual(herdr.calls.map((c) => c.slice(0, 2).join(" ")), ["agent get", "agent get", "agent rename", "pane run"]);
 	assert.deepEqual(herdr.calls[2], ["agent", "rename", "w1:p9", "reviewer"]);
 	assert.deepEqual(warnings, ['could not rename the agent to "reviewer": herdr agent rename failed: nope']);
+});
+
+const configPath = (content: string) => {
+	const f = join(dir(), "agents.json");
+	writeFileSync(f, content);
+	return f;
+};
+
+test("S1: a malformed or non-object agents.json is a UsageError naming the file", () => {
+	const bad = configPath("{ not json");
+	assert.throws(() => listAgents(bad), (e) => e instanceof UsageError && e.message.startsWith(`Cannot read ${bad}: `) && e.message.length > `Cannot read ${bad}: `.length);
+	for (const content of ["[]", "null", '"x"', "1"]) {
+		const f = configPath(content);
+		assert.throws(() => listAgents(f), (e) => e instanceof UsageError && e.message === `Cannot read ${f}: expected a JSON object`, content);
+	}
+});
+
+test("S1 preserve: a valid agents.json still adds agents", () => {
+	const f = configPath(JSON.stringify({ aider: { exec: "aider" } }));
+	assert.deepEqual(listAgents(f).find((a) => a.name === "aider"), { name: "aider", exec: "aider", format: null });
+});
+
+test("S3: resolveAgent rejects an unknown agent with a UsageError and the same message", () => {
+	assert.throws(() => resolveAgent("vim"), (e) => e instanceof UsageError && e.message === 'Unknown agent "vim". Known agents: claude, codex, gentle, pi');
+});
+
+test("S4: whitespace runs and newlines in a role prompt collapse so the notice stays one line", () => {
+	const notice = splitNotice({ sourcePane: "w1:p1", sourceAgent: "claude", cwd: "/repo", role: { name: "judge", prompt: "  Review the PR.\n\n  Then:\r\n\t- report   the verdict.\n" } });
+	assert.doesNotMatch(notice, /[\r\n\t]/);
+	assert.match(notice, /Do this now: Review the PR\. Then: - report the verdict\.$/);
 });

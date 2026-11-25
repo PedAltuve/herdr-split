@@ -53,9 +53,14 @@ test("help --json describes the public commands, their options and the agents", 
 	assert.equal(doc.slashCommand, SLASH);
 	assert.deepEqual(doc.commands.map((c: { name: string }) => c.name), ["launch", "split", "agents", "roles", "help"]);
 	const launch = doc.commands[0];
-	assert.ok(launch.synopsis.startsWith("herdr-split launch --agent <name>"));
+	assert.ok(launch.synopsis.startsWith("herdr-split launch (--agent <name> | --role <name>) "));
 	assert.deepEqual(launch.options.find((o: { flag: string }) => o.flag === "--ratio"), { flag: "--ratio", value: "<0..1>", description: "Size of the new pane as a fraction of the calling pane.", default: "0.5", required: false });
-	assert.equal(launch.options.find((o: { flag: string }) => o.flag === "--agent").required, true);
+	const agentOption = (c: { options: { flag: string; required: boolean; description: string }[] }) => c.options.find((o) => o.flag === "--agent")!;
+	for (const c of [doc.commands[0], doc.commands[1]]) {
+		assert.equal(agentOption(c).required, false);
+		assert.match(agentOption(c).description, /Required unless --role is given\./);
+	}
+	assert.equal(launch.options.find((o: { flag: string }) => o.flag === "--source-kind").required, true);
 	assert.deepEqual(doc.agents.find((a: { name: string }) => a.name === "aider"), { name: "aider", exec: "aider", format: null });
 	assert.deepEqual(doc.agents.find((a: { name: string }) => a.name === "gentle"), { name: "gentle", exec: "gentle-shell", format: "pi" });
 	assert.equal(doc.roles.length, 1);
@@ -154,4 +159,9 @@ test("--help with --json after another command prints the help JSON", () => {
 	assert.equal(r.status, 0);
 	assert.equal(r.stderr, "");
 	assert.equal(r.stdout, run("help", "--json").stdout);
+});
+
+test("S5: help text and the README say --agent is required unless --role is given", () => {
+	assert.match(run("help").stdout, /--agent <name> +.*Required unless --role is given\./);
+	assert.match(readFileSync(README, "utf8"), /`--agent` is required unless `--role` is given/);
 });
