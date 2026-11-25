@@ -70,6 +70,17 @@ export function shellQuote(value: string): string {
 	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+
+function ending(opts: { role?: { name: string; prompt: string }; prompt?: string }): string[] {
+	const prompt = opts.prompt ? oneLine(opts.prompt) : "";
+	if (opts.role) {
+		const role = `Your role in this split is "${opts.role.name}". Do this now: ${oneLine(opts.role.prompt)}`;
+		return [prompt ? `${role} Additional instruction from the user, to act on now: ${prompt}` : role];
+	}
+	return [prompt ? `The user's instruction for you in this split, to act on now: ${prompt}` : "Reply with one short line confirming you understand, then wait for the user's next instruction."];
+}
+
 export function splitNotice(opts: {
 	sourcePane: string;
 	sourceAgent: string;
@@ -78,6 +89,8 @@ export function splitNotice(opts: {
 	name?: string;
 	/** Its prompt replaces the "confirm and wait" ending. */
 	role?: { name: string; prompt: string };
+	/** The user's instruction to act on now; with a role it follows the role's instruction. */
+	prompt?: string;
 }): string {
 	const parts = [
 		`[herdr-split] This conversation is a split of another conversation that is still in progress in Herdr pane ${opts.sourcePane} (${opts.sourceAgent}).`,
@@ -87,9 +100,7 @@ export function splitNotice(opts: {
 			: "Everything above was copied from it up to the point the user branched from.",
 		"Do not act on, continue, or redo any request from earlier messages: the original conversation owns them.",
 		`The original conversation is probably still changing files in ${opts.cwd}: re-read files before you rely on them, avoid editing the files it is working on, and never revert, reset, stash, checkout or clean changes you did not make.`,
-		opts.role
-			? `Your role in this split is "${opts.role.name}". Do this now: ${opts.role.prompt.replace(/\s+/g, " ").trim()}`
-			: "Reply with one short line confirming you understand, then wait for the user's next instruction.",
+		...ending(opts),
 	];
 	return parts.join(" ");
 }

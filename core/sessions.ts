@@ -120,6 +120,18 @@ function claudeEntry(row: Record<string, unknown>): PathEntry {
 	return { id, role: "user", prompt: text.trim().length > 0 && !isSplitCommand(text), text, toolCalls, raw: row };
 }
 
+/**
+ * The `<command-args>` of the last `/split` the user typed, as Claude Code records it in the
+ * transcript (`<command-message>split</command-message>\n<command-name>/split</command-name>\n<command-args>…</command-args>`)
+ * before the command runs. Undefined when the conversation has no such entry.
+ */
+export function lastSplitArgs(session: Session): string | undefined {
+	if (session.kind !== "claude") throw new Error("lastSplitArgs needs a Claude session");
+	const entry = session.path.findLast((e) => e.role === "user" && /^\s*(<command-message>[^<]*<\/command-message>\s*)?<command-name>\/split<\/command-name>/.test(e.text));
+	if (!entry) return undefined;
+	return /<command-args>([\s\S]*)<\/command-args>/.exec(entry.text)?.[1] ?? "";
+}
+
 function buildTurns(path: PathEntry[]): Turn[] {
 	const turns: Turn[] = [];
 	// Drop only the trailing /split invocation (the one running now); earlier ones stay in their turn.

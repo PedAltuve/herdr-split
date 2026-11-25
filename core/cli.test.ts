@@ -410,3 +410,260 @@ test("S4: a multi-line role prompt reaches herdr pane run as one line", async ()
 	assert.doesNotMatch(notice, /\n/);
 	assert.match(notice, /Do this now: Critique the plan\. Be brief\.$/);
 });
+
+// ---- prompt after the agent (issue #4) ----
+
+const NASTY = "x; touch CANARY $(touch CANARY) `touch CANARY` ' \" \\ | & > CANARY\nline two\n\ttouch CANARY";
+const NASTY_ONE_LINE = NASTY.replace(/\s+/g, " ").trim();
+
+function claudeHome(sb: ReturnType<typeof sandbox>, rows: unknown[]): string {
+	const home = join(sb.dir, "claude");
+	mkdirSync(join(home, "projects", "-repo"), { recursive: true });
+	writeFileSync(join(home, "projects", "-repo", "sid.jsonl"), jsonl(rows));
+	return home;
+}
+
+const slashEntry = (uuid: string, parentUuid: string | null, args: string, form: "string" | "array" = "string") => {
+	const text = `<command-message>split</command-message>\n<command-name>/split</command-name>\n<command-args>${args}</command-args>`;
+	return { type: "user", uuid, parentUuid, sessionId: "sid", cwd: "/repo", message: { role: "user", content: form === "string" ? text : [{ type: "text", text }] } };
+};
+const hi = { type: "user", uuid: "u", parentUuid: null, sessionId: "sid", cwd: "/repo", message: { role: "user", content: "hi" } };
+
+const fromTranscript = (sb: ReturnType<typeof sandbox>, rows: unknown[], ...extra: string[]) =>
+	spawnSync(BIN, ["split", "--source-kind", "claude", "--session-id", "sid", "--source-agent", "claude", "--args-from-transcript", ...extra], { env: { ...sb.env, CLAUDE_CONFIG_DIR: claudeHome(sb, rows) }, encoding: "utf8" });
+
+const SLASH = "/split <claude|codex|gentle|pi|judge> [<role>] [--name <name>] [<prompt>] (agents: claude|codex|gentle|pi; roles: judge)";
+
+test("S2: launch --prompt ends the notice with the user's instruction, collapsed to one line", async () => {
+	const sb = sandbox();
+	const res = spawnSync(BIN, launchArgs(sb, "--agent", "claude", "--prompt", "haz un judge\n  del PR X"), { env: sb.env, encoding: "utf8" });
+	assert.equal(res.status, 0, res.stderr);
+	assert.equal(res.stderr, "");
+	await until(() => (runs(sb).length === 2 ? true : undefined));
+	const notice = runs(sb)[1]![3]!;
+	assert.doesNotMatch(notice, /\n/);
+	assert.match(notice, /Do not act on, continue, or redo any request from earlier messages/);
+	assert.match(notice, /probably still changing files in \/repo/);
+	assert.doesNotMatch(notice, /wait for the user's next instruction/);
+	assert.match(notice, /The user's instruction for you in this split, to act on now: haz un judge del PR X$/);
+});
+
+test("S2: launch --role judge --prompt puts the role's instruction first and the prompt after it", async () => {
+	const sb = sandbox();
+	const res = spawnSync(BIN, launchArgs(sb, "--agent", "claude", "--role", "judge", "--prompt", "focus on PR 4"), { env: sb.env, encoding: "utf8" });
+	assert.equal(res.status, 0, res.stderr);
+	await until(() => (runs(sb).length === 2 ? true : undefined));
+	const notice = runs(sb)[1]![3]!;
+	assert.match(notice, /Your role in this split is "judge"\. Do this now: Run the judgment-day skill .* report its verdict\. Additional instruction from the user, to act on now: focus on PR 4$/);
+	assert.match(notice, /Do not act on, continue, or redo any request from earlier messages/);
+});
+
+test("S2: an empty or blank --prompt is no prompt at all", async () => {
+	const sb = sandbox();
+	const res = spawnSync(BIN, launchArgs(sb, "--agent", "claude", "--prompt", " \n "), { env: sb.env, encoding: "utf8" });
+	assert.equal(res.status, 0, res.stderr);
+	await until(() => (runs(sb).length === 2 ? true : undefined));
+	assert.match(runs(sb)[1]![3]!, /Reply with one short line confirming you understand, then wait for the user's next instruction\.$/);
+});
+
+test("S2: a prompt over 4000 characters exits 2 before any pane operation (launch, split, pick)", () => {
+	const long = "a".repeat(4001);
+	const message = "herdr-split: The prompt is 4001 characters long; the limit is 4000\n";
+	const sb = sandbox();
+	const cases = [
+		launchArgs(sb, "--agent", "claude", "--prompt", long),
+		["split", "--agent", "claude", "--source-kind", "claude", "--session-id", "sid", "--prompt", long],
+		["pick", "--agent", "claude", "--source-kind", "pi", "--session", piSession(sb.dir), "--source-pane", "w1:p1", "--prompt", long],
+	];
+	for (const args of cases) {
+		const res = spawnSync(BIN, args, { env: sb.env, encoding: "utf8" });
+		assert.equal(res.status, 2, args[0]);
+		assert.equal(res.stdout, "");
+		assert.equal(res.stderr, message);
+		assert.deepEqual(sb.readCalls(), []);
+	}
+});
+
+test("S2 preserve: without a prompt a named role split keeps its exact notice ending", async () => {
+	const sb = sandbox();
+	const res = spawnSync(BIN, launchArgs(sb, "--agent", "claude", "--role", "judge"), { env: sb.env, encoding: "utf8" });
+	assert.equal(res.status, 0, res.stderr);
+	await until(() => (runs(sb).length === 2 ? true : undefined));
+	assert.match(runs(sb)[1]![3]!, /report its verdict\.$/);
+});
+
+test("S4: split --prompt hands the prompt to the picker command, single-quoted", () => {
+	const sb = sandbox();
+	const res = spawnSync(BIN, ["split", "--agent", "gentle", "--source-kind", "claude", "--session-id", "sid", "--source-agent", "claude", "--prompt", "it's a \"test\""], { env: { ...sb.env, CLAUDE_CONFIG_DIR: claudeHome(sb, [hi]) }, encoding: "utf8" });
+	assert.equal(res.status, 0, res.stderr);
+	const run = sb.readCalls().find((c) => c[1] === "run")!;
+	assert.match(run[3]!, / '--source-agent' 'claude' '--prompt' 'it'\\''s a "test"'$/);
+});
+
+test("S4 preserve: split without a prompt passes no --prompt to the picker", () => {
+	const sb = sandbox();
+	const res = spawnSync(BIN, ["split", "--agent", "gentle", "--source-kind", "claude", "--session-id", "sid", "--source-agent", "claude"], { env: { ...sb.env, CLAUDE_CONFIG_DIR: claudeHome(sb, [hi]) }, encoding: "utf8" });
+	assert.equal(res.status, 0, res.stderr);
+	assert.doesNotMatch(sb.readCalls().find((c) => c[1] === "run")![3]!, /--prompt/);
+});
+
+test("S4: pick --prompt submits the prompt in the notice", async () => {
+	const sb = sandbox();
+	const bindir = join(sb.dir, "bin");
+	mkdirSync(bindir);
+	writeFileSync(join(bindir, "fzf"), "#!/bin/sh\ncat >/dev/null\nprintf '1\\t1. build it\\n'\n", { mode: 0o755 });
+	writeFileSync(join(bindir, "codex"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+	const session = piSession(sb.dir);
+	writeFileSync(session, readFileSync(session, "utf8").replace('"cwd":"/repo"', `"cwd":${JSON.stringify(sb.dir)}`));
+	const res = spawnSync(BIN, ["pick", "--agent", "codex", "--source-kind", "pi", "--session", session, "--source-pane", "w1:p1", "--source-agent", "gentle-shell", "--prompt", "haz algo"], { env: { ...sb.env, PATH: `${bindir}:${process.env.PATH}` }, encoding: "utf8" });
+	assert.equal(res.status, 0, res.stderr);
+	const run = await until(() => runs(sb)[0]);
+	assert.match(run[3]!, /to act on now: haz algo$/);
+});
+
+test("S3: --args-from-transcript reads the last /split of the Claude transcript (string content)", () => {
+	const sb = sandbox();
+	const rows = [hi, slashEntry("s1", "u", "pi old prompt"), slashEntry("s2", "s1", "gentle judge --name rev revisa el PR 4")];
+	const res = fromTranscript(sb, rows);
+	assert.equal(res.status, 0, res.stderr);
+	assert.equal(res.stderr, "");
+	assert.equal(res.stdout, "herdr-split: pick the branch point in pane w1:p7; gentle starts there after you choose.\n");
+	const calls = sb.readCalls();
+	assert.deepEqual(calls[2], ["pane", "rename", "w1:p7", "rev"]);
+	assert.match(calls[3]![3]!, /'pick' '--agent' 'gentle' '--role' 'judge' '--name' 'rev' '--source-kind' 'claude' .* '--source-agent' 'claude' '--prompt' 'revisa el PR 4'$/);
+});
+
+test("S3: --args-from-transcript reads content-array transcripts too", () => {
+	const sb = sandbox();
+	const res = fromTranscript(sb, [hi, slashEntry("s1", "u", "claude haz algo", "array")]);
+	assert.equal(res.status, 0, res.stderr);
+	assert.match(sb.readCalls()[2]![3]!, /'--agent' 'claude' .* '--prompt' 'haz algo'$/);
+});
+
+test("S3: --args-from-transcript with a plain /split gentle behaves as before (no prompt, no name)", () => {
+	const sb = sandbox();
+	const res = fromTranscript(sb, [hi, slashEntry("s1", "u", "gentle")]);
+	assert.equal(res.status, 0, res.stderr);
+	assert.equal(res.stdout, "herdr-split: pick the branch point in pane w1:p7; gentle starts there after you choose.\n");
+	assert.deepEqual(sb.readCalls().map((c) => c.slice(0, 2).join(" ")), ["pane layout", "pane split", "pane run"]);
+	assert.doesNotMatch(sb.readCalls()[2]![3]!, /--prompt|--name|--role/);
+});
+
+test("S3: empty arguments print the slash usage, exit 2, touch no pane", () => {
+	for (const args of ["", "   "]) {
+		const sb = sandbox();
+		const res = fromTranscript(sb, [hi, slashEntry("s1", "u", args)]);
+		assert.equal(res.status, 2);
+		assert.equal(res.stdout, "");
+		assert.equal(res.stderr, `herdr-split: usage: ${SLASH}\n`);
+		assert.deepEqual(sb.readCalls(), []);
+	}
+});
+
+test("S3: invalid arguments print the reason and the slash usage, exit 2, touch no pane", () => {
+	const cases: [string, string][] = [
+		["vim", 'Unknown agent "vim". Known agents: claude, codex, gentle, pi. Known roles: judge'],
+		["gentle --name Bad", '--name must match ^[a-z][a-z0-9_-]{0,31}$, got "Bad"'],
+		["gentle --name a --name b", "--name can be given only once"],
+		["gentle --name", "--name needs a value"],
+		[`gentle ${"a".repeat(4001)}`, "The prompt is 4001 characters long; the limit is 4000"],
+	];
+	for (const [args, reason] of cases) {
+		const sb = sandbox();
+		const res = fromTranscript(sb, [hi, slashEntry("s1", "u", args)]);
+		assert.equal(res.status, 2, args);
+		assert.equal(res.stdout, "");
+		assert.equal(res.stderr, `herdr-split: ${reason}\nherdr-split: usage: ${SLASH}\n`);
+		assert.deepEqual(sb.readCalls(), []);
+	}
+});
+
+test("S3: a transcript without a /split entry, or --args-from-transcript with explicit target options, exits 2", () => {
+	const sb = sandbox();
+	const none = fromTranscript(sb, [hi]);
+	assert.equal(none.status, 2);
+	assert.equal(none.stderr, "herdr-split: No /split invocation found in the Claude Code transcript\n");
+	const mixed = fromTranscript(sb, [hi, slashEntry("s1", "u", "gentle")], "--agent", "pi");
+	assert.equal(mixed.status, 2);
+	assert.equal(mixed.stderr, "herdr-split: --args-from-transcript cannot be combined with --agent, --role, --name or --prompt\n");
+	const pi = spawnSync(BIN, ["split", "--source-kind", "pi", "--session", piSession(sb.dir), "--args-from-transcript"], { env: sb.env, encoding: "utf8" });
+	assert.equal(pi.status, 2);
+	assert.equal(pi.stderr, "herdr-split: --args-from-transcript needs --source-kind claude\n");
+	assert.deepEqual(sb.readCalls(), []);
+});
+
+/** Run the command herdr was told to type into the new pane, the way the shell there would. */
+function typedCommand(sb: ReturnType<typeof sandbox>): { bindir: string; run: () => ReturnType<typeof spawnSync> } {
+	const bindir = join(sb.dir, "bin");
+	mkdirSync(bindir, { recursive: true });
+	writeFileSync(join(bindir, "fzf"), "#!/bin/sh\ncat >/dev/null\nprintf '1\\t1. hi\\n'\n", { mode: 0o755 });
+	writeFileSync(join(bindir, "codex"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+	const command = sb.readCalls().find((c) => c[1] === "run")![3]!;
+	return { bindir, run: () => spawnSync("sh", ["-c", command], { cwd: sb.dir, env: { ...sb.env, PATH: `${bindir}:${process.env.PATH}` }, encoding: "utf8" }) };
+}
+
+async function assertPromptIsInert(sb: ReturnType<typeof sandbox>) {
+	const typed = typedCommand(sb);
+	const res = typed.run();
+	assert.equal(res.status, 0, String(res.stderr));
+	const notice = (await until(() => runs(sb).find((c) => c[2] === "w1:p1")))[3]!;
+	assert.ok(notice.endsWith(`to act on now: ${NASTY_ONE_LINE}`), notice);
+	assert.equal(existsSync(join(sb.dir, "CANARY")), false);
+	assert.equal(existsSync(join(process.cwd(), "CANARY")), false);
+}
+
+function canarySession(sb: ReturnType<typeof sandbox>): string {
+	const session = piSession(sb.dir);
+	writeFileSync(session, readFileSync(session, "utf8").replace('"cwd":"/repo"', `"cwd":${JSON.stringify(sb.dir)}`));
+	return session;
+}
+
+test("S5: a hostile prompt on the CLI split → pick path reaches the notice verbatim and runs nothing", async () => {
+	const sb = sandbox();
+	const res = spawnSync(BIN, ["split", "--agent", "codex", "--source-kind", "pi", "--session", canarySession(sb), "--source-agent", "gentle-shell", "--prompt", NASTY], { env: sb.env, encoding: "utf8" });
+	assert.equal(res.status, 0, res.stderr);
+	await assertPromptIsInert(sb);
+});
+
+test("S5: a hostile prompt in the Claude transcript reaches the notice verbatim and runs nothing", async () => {
+	const sb = sandbox();
+	const res = fromTranscript(sb, [{ ...hi, cwd: sb.dir }, { ...slashEntry("s1", "u", `codex ${NASTY}`), cwd: sb.dir }]);
+	assert.equal(res.status, 0, res.stderr);
+	assert.equal(res.stderr, "");
+	await assertPromptIsInert(sb);
+});
+
+test("S5: a hostile prompt through Pi's runSplit args (execFile, no shell) reaches the notice verbatim and runs nothing", async () => {
+	const { runSplit } = await import("../pi/split-command.ts");
+	const sb = sandbox();
+	const session = canarySession(sb);
+	const notes: string[] = [];
+	await runSplit(`claude ${NASTY}`, {
+		env: { HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1" },
+		sessionFile: session,
+		leafId: "a1",
+		configFile: undefined,
+		select: async (_t, options) => options[0],
+		notify: (msg) => notes.push(msg),
+		branch: () => session,
+		launch: async (args) => {
+			assert.equal(args.at(-2), "--prompt");
+			assert.equal(args.at(-1), NASTY_ONE_LINE);
+			const r = spawnSync(BIN, args, { cwd: sb.dir, env: sb.env, encoding: "utf8" });
+			if (r.status !== 0) throw new Error(r.stderr);
+			return JSON.parse(r.stdout);
+		},
+	});
+	assert.deepEqual(notes, ["Split opened in pane w1:p7 with claude."]);
+	await until(() => (runs(sb).length === 2 ? true : undefined));
+	assert.ok(runs(sb)[1]![3]!.endsWith(`to act on now: ${NASTY_ONE_LINE}`));
+	assert.equal(existsSync(join(sb.dir, "CANARY")), false);
+});
+
+test("S4: a prompt starting with a single dash is accepted as --prompt <text>", async () => {
+	const sb = sandbox();
+	const res = spawnSync(BIN, launchArgs(sb, "--agent", "claude", "--prompt", "- fix the bug"), { env: sb.env, encoding: "utf8" });
+	assert.equal(res.status, 0, res.stderr);
+	await until(() => (runs(sb).length === 2 ? true : undefined));
+	assert.match(runs(sb)[1]![3]!, /to act on now: - fix the bug$/);
+});

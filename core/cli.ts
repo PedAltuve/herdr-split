@@ -9,8 +9,9 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { normalizePrompt, parseSplitCommand } from "./command.ts";
 import { helpJson, helpText, slashUsage, usageLine } from "./help.ts";
-import { readSession, type SourceKind } from "./sessions.ts";
+import { lastSplitArgs, readSession, type SourceKind } from "./sessions.ts";
 import { checkName, listRoles, resolveTarget, sourceAgentFor, type Role } from "./roles.ts";
 import {
 	listAgents,
@@ -79,6 +80,8 @@ export const OPTIONS = {
 	agent: { type: "string" },
 	role: { type: "string", multiple: true },
 	name: { type: "string", multiple: true },
+	prompt: { type: "string" },
+	"args-from-transcript": { type: "boolean", default: false },
 	"source-kind": { type: "string" },
 	session: { type: "string" },
 	"session-id": { type: "string" },
@@ -148,6 +151,7 @@ function spawnNotify(pane: string, notice: string, name?: string): string {
 
 async function launch(values: Values): Promise<void> {
 	const { agent: resolved, role, name } = target(values);
+	const prompt = normalizePrompt(values.prompt);
 	const kind = sourceKind(values["source-kind"]);
 	const src = sourcePane(values["source-pane"]);
 	const session = readSession(kind, required(values, "session"));
@@ -158,16 +162,48 @@ async function launch(values: Values): Promise<void> {
 	const plan = prepareTarget({ agent, session, cutId, branched: values.branched, outDir: outDir() });
 	const pane = await openSplitPane(herdr, { sourcePane: src, cwd, command: plan.command, ratio: ratio(values), focus: !values["no-focus"], name });
 	source ??= await sourceAgent(values, src, kind);
-	const notice = splitNotice({ sourcePane: src, sourceAgent: source, cwd, transcript: plan.transcript, name, role });
+	const notice = splitNotice({ sourcePane: src, sourceAgent: source, cwd, transcript: plan.transcript, name, role, prompt });
 	const log = spawnNotify(pane, notice, name);
 	console.log(JSON.stringify({ pane, agent: agent.name, command: plan.command, transcript: plan.transcript ?? null, log }));
 }
 
+/** The agent, role, name and prompt typed after `/split`, read from the Claude Code transcript; never from the command line. */
+function argsFromTranscript(values: Values, kind: SourceKind, file: string): Values {
+	if (values.agent || values.role || values.name || values.prompt !== undefined) {
+		throw new UsageError("--args-from-transcript cannot be combined with --agent, --role, --name or --prompt");
+	}
+	if (kind !== "claude") throw new UsageError("--args-from-transcript needs --source-kind claude");
+	const args = lastSplitArgs(readSession(kind, file));
+	if (args === undefined) throw new UsageError("No /split invocation found in the Claude Code transcript");
+	const agents = listAgents(configFile());
+	const roles = listRoles(configFile("roles.json"), agents);
+	const usage = `usage: ${slashUsage(agents, roles)}`;
+	if (!args.trim()) throw new UsageError(usage);
+	try {
+		const parsed = parseSplitCommand(args, agents, roles);
+		if (!parsed.agent) throw new UsageError("An agent or role is required");
+		const next = { ...values, agent: parsed.agent, role: parsed.role, name: parsed.name, prompt: parsed.prompt };
+		target(next);
+		return next;
+	} catch (error) {
+		if (error instanceof UsageError) throw new UsageError(`${error.message}\nherdr-split: ${usage}`);
+		throw error;
+	}
+}
+
 async function split(values: Values): Promise<void> {
-	const { agent: resolved, role, name } = target(values);
+	let chosen = values["args-from-transcript"] ? undefined : target(values);
+	let prompt = values["args-from-transcript"] ? undefined : normalizePrompt(values.prompt);
 	const kind = sourceKind(values["source-kind"]);
-	const src = sourcePane(values["source-pane"]);
 	const file = values.session || (kind === "claude" && values["session-id"] ? findClaudeSession(values["session-id"]) : undefined);
+	if (values["args-from-transcript"]) {
+		if (!file) throw new UsageError("--session or --session-id is required");
+		values = argsFromTranscript(values, kind, file);
+		chosen = target(values);
+		prompt = normalizePrompt(values.prompt);
+	}
+	const { agent: resolved, role, name } = chosen!;
+	const src = sourcePane(values["source-pane"]);
 	if (!file) throw new UsageError("--session or --session-id is required");
 	const session = readSession(kind, file);
 	if (session.turns.length === 0) throw new UsageError("The conversation has no messages to branch from yet");
@@ -183,6 +219,7 @@ async function split(values: Values): Promise<void> {
 		"--session", file,
 		"--source-pane", src,
 		"--source-agent", source,
+		...(prompt ? ["--prompt", prompt] : []),
 	];
 	const command = args.map(shellQuote).join(" ");
 	const pane = await openSplitPane(herdr, { sourcePane: src, cwd, command, ratio: ratio(values), focus: !values["no-focus"], name });
@@ -193,6 +230,7 @@ async function split(values: Values): Promise<void> {
 async function pick(values: Values): Promise<number> {
 	const { agent: resolved, role, name } = target(values);
 	const agent = resolved!;
+	const prompt = normalizePrompt(values.prompt);
 	const kind = sourceKind(values["source-kind"]);
 	const src = required(values, "source-pane");
 	const self = sourcePane(undefined);
@@ -212,7 +250,7 @@ async function pick(values: Values): Promise<number> {
 	}
 	const cwd = session.cwd || process.cwd();
 	const plan = prepareTarget({ agent, session, cutId: turn.cutId, outDir: outDir() });
-	spawnNotify(self, splitNotice({ sourcePane: src, sourceAgent: values["source-agent"] || kind, cwd, transcript: plan.transcript, name, role }), name);
+	spawnNotify(self, splitNotice({ sourcePane: src, sourceAgent: values["source-agent"] || kind, cwd, transcript: plan.transcript, name, role, prompt }), name);
 	const run = spawnSync("sh", ["-c", plan.command], { stdio: "inherit", cwd });
 	return run.status ?? 1;
 }
@@ -223,9 +261,20 @@ async function notify(values: Values): Promise<void> {
 	console.log(`notice submitted to ${values.pane}`);
 }
 
+/** `--prompt -x` is ambiguous to parseArgs; pass a single-dash value as `--prompt=-x`. Anything starting with `--` stays an option. */
+function joinPromptValue(argv: string[]): string[] {
+	const out: string[] = [];
+	for (let i = 0; i < argv.length; i++) {
+		const next = argv[i + 1];
+		if (argv[i] === "--prompt" && next !== undefined && /^-(?!-)/.test(next)) out.push(`--prompt=${argv[++i]}`);
+		else out.push(argv[i]!);
+	}
+	return out;
+}
+
 export async function main(argv: string[]): Promise<number> {
 	try {
-		const parsed = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
+		const parsed = parseArgs({ args: joinPromptValue(argv), options: OPTIONS, allowPositionals: true, strict: true });
 		const { positionals } = parsed;
 		const values = single(parsed.values);
 		const [command] = positionals;

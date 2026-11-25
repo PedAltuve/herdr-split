@@ -26,11 +26,25 @@ Links `herdr-split` into `~/.local/bin`, adds the `/split` extension to your Pi 
 /split judge                      # a role: adversarial review of the PR (gentle + judgment-day)
 /split gentle judge               # an agent plus a role
 /split gentle --name reviewer     # name the split
+/split gentle haz un judge del PR X          # a prompt: the new agent acts on it now
+/split gentle judge revisa el PR 4           # agent + role + prompt
 ```
 
 - From **Pi / gentle-shell**: a native picker asks for the branch point.
 - From **Claude Code**: the new pane opens an `fzf` picker for the branch point.
+- Text after the agent (and optional role and `--name`) is a [prompt](#prompt) for the new agent.
 - Without arguments, Pi asks for an agent or role and Claude Code replies with the usage. Both list the agents from `herdr-split agents` and the roles from `herdr-split roles`, including your `agents.json` and `roles.json` ones.
+
+## Prompt
+
+`/split <agent|role> [<role>] [--name <name>] [<prompt>]`: everything after the agent (and the optional role and `--name`) is a prompt for the new agent.
+
+- The first word is an agent or a role. The second word is a role only when it names a known role (`/split gentle judge ...`); otherwise it starts the prompt (`/split gentle haz un judge del PR X`).
+- `--name <name>` is read only before the prompt; from the first prompt word on, everything (including `--name`) is literal prompt text.
+- The prompt is collapsed to one line (whitespace runs become one space) and may be at most 4000 characters; a longer one exits 2 before any pane is touched.
+- The split notice then ends with the prompt as the instruction to act on now instead of "confirm and wait". With a role, the role's instruction comes first and the prompt follows as additional instruction. The rule not to act on earlier messages and the warning about the original conversation changing files stay.
+- On the CLI it is `--prompt <text>` (`launch`, `split`; `pick` carries it to the new pane single-quoted). Pi passes it with `execFile`, so no shell sees it.
+- Claude Code: the command file runs one fixed Bash command with no user text, `herdr-split split ... --args-from-transcript`, and the core reads the `<command-args>` of the last `/split` entry in the session transcript and parses them with the same parser. Empty or invalid arguments print the `/split` usage and exit 2 without touching a pane.
 
 ## Names
 
@@ -85,7 +99,7 @@ Once the target is ready it receives a message saying the conversation is a spli
 
 1. not act on any earlier message;
 2. expect that the original conversation keeps changing files in the working tree;
-3. acknowledge and wait for your instructions, or, with a role, carry out the role's instruction instead.
+3. acknowledge and wait for your instructions, or, with a role, carry out the role's instruction instead; with a prompt, act on the prompt now (after the role's instruction when there is one).
 
 With `--name` it also states the split's name.
 
@@ -115,10 +129,11 @@ Create `~/.config/herdr-split/agents.json` (or under `$XDG_CONFIG_HOME`):
 
 ```
 herdr-split launch (--agent <name> | --role <name>) --source-kind pi|claude --session <file> --cut <id>
-                   [--branched <file>] [--name <name>] [--source-agent <name>]
+                   [--branched <file>] [--name <name>] [--prompt <text>] [--source-agent <name>]
                    [--ratio 0.5] [--no-focus]
-herdr-split split  (--agent <name> | --role <name>) --source-kind pi|claude (--session <file> | --session-id <id>)
-                   [--name <name>] [--source-agent <name>] [--ratio 0.5] [--no-focus]
+herdr-split split  (--agent <name> | --role <name> | --args-from-transcript) --source-kind pi|claude
+                   (--session <file> | --session-id <id>) [--name <name>] [--prompt <text>]
+                   [--source-agent <name>] [--ratio 0.5] [--no-focus]
 herdr-split agents
 herdr-split roles
 herdr-split help [--json | --slash]
@@ -130,7 +145,7 @@ herdr-split help [--json | --slash]
 - `roles`: List the known roles, the agent each uses and its prompt.
 - `help`: Show this help, as JSON, or as the /split usage line.
 
-`--agent` is required unless `--role` is given; it may name an agent or a role. `--role` adds a role to an agent (alone, it uses the role's agent); `--name` names the split. `--name` and `--role` can each be given once. A malformed `agents.json` or `roles.json` exits 2 with `Cannot read <path>: <reason>`.
+`--agent` is required unless `--role` is given; it may name an agent or a role. `--role` adds a role to an agent (alone, it uses the role's agent); `--name` names the split; `--prompt` sends the new agent an instruction (see [Prompt](#prompt)); `--args-from-transcript` (Claude Code, replaces `--agent`) reads all of these from the last `/split` in the transcript and cannot be combined with them. `--name` and `--role` can each be given once. A malformed `agents.json` or `roles.json` exits 2 with `Cannot read <path>: <reason>`.
 
 `herdr-split help` (or `--help`, `-h`) lists every option and the known agents and roles, including those from `agents.json` and `roles.json`. `herdr-split help --json` gives the same as JSON, so an agent can learn the tool by running it. This section is checked against that help by `core/help.test.ts`.
 
