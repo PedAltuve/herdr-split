@@ -66,6 +66,7 @@ export function parseSplitArgs(args: string): { words: string[]; name?: string; 
 		if (t === "--name" || t.startsWith("--name=")) {
 			const value = t === "--name" ? tokens[++i] : t.slice("--name=".length);
 			if (!value) return { words, error: "--name needs a value" };
+			if (name !== undefined) return { words, error: "--name can be given only once" };
 			name = value;
 		} else if (t.startsWith("--")) return { words, error: `Unknown option "${t.split("=")[0]}"` };
 		else words.push(t);
@@ -115,8 +116,9 @@ export async function runSplit(args: string, deps: SplitDeps): Promise<void> {
 			deps.notify(error instanceof Error ? error.message : String(error), "error");
 			return;
 		}
-		// A role without an agent splits into the source agent, which in Pi is a Pi-format agent.
-		const piFormat = (resolved.agent?.format ?? "pi") === "pi";
+		// A role without an agent splits into the source agent, which in Pi is a Pi-format agent;
+		// a resolved agent branches natively only when it resumes Pi sessions (format null gets a transcript).
+		const piFormat = resolved.agent ? resolved.agent.format === "pi" : true;
 
 		const turns = readSession("pi", deps.sessionFile, deps.leafId).turns;
 		if (!turns.length) {

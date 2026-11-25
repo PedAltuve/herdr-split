@@ -198,3 +198,22 @@ test("an agents.json agent named judge still registers /split, without the built
 	assert.match(info.description, /judge/);
 	assert.deepEqual(info.getArgumentCompletions("ju")?.map((i) => i.value), ["judge"]);
 });
+
+test("transcript-only agents never create a native Pi branch", async () => {
+	const { d, log } = deps();
+	await runSplit("codex", d);
+	assert.deepEqual(log.branched, []);
+	assert.equal(log.launched.length, 1);
+	assert.equal(log.launched[0]!.includes("--branched"), false);
+});
+
+test("a repeated --name is rejected before anything is picked or launched", async () => {
+	for (const args of ["gentle --name first --name second", "gentle --name a' --name second"]) {
+		const { d, log } = deps();
+		await runSplit(args, d);
+		assert.deepEqual(log.launched, [], args);
+		assert.deepEqual(log.branched, [], args);
+		assert.equal(log.selectOptions, undefined, args);
+		assert.deepEqual(log.notify, [["--name can be given only once", "error"]], args);
+	}
+});
