@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agentCompletions, runSplit, type SplitDeps } from "./split-command.ts";
+import { agentCompletions, runSplit, splitCommandInfo, type SplitDeps } from "./split-command.ts";
 
 const jsonl = (rows: unknown[]) => rows.map((r) => JSON.stringify(r)).join("\n") + "\n";
 
@@ -57,6 +57,27 @@ test("completions list the known agents by prefix", () => {
 	assert.deepEqual(agentCompletions("g").map((i) => i.value), ["gentle"]);
 	assert.deepEqual(agentCompletions("").map((i) => i.value), ["claude", "codex", "gentle", "pi"]);
 	assert.equal(agentCompletions("zz"), null);
+});
+
+function config(): string {
+	const f = join(mkdtempSync(join(tmpdir(), "herdr-split-cfg-")), "agents.json");
+	writeFileSync(f, JSON.stringify({ aider: { exec: "aider", format: null } }));
+	return f;
+}
+
+test("the registered /split completions and description include agents from agents.json", () => {
+	const info = splitCommandInfo(config());
+	assert.deepEqual(info.getArgumentCompletions("a")?.map((i) => i.value), ["aider"]);
+	assert.equal(info.description, "Branch this conversation into another agent in a new Herdr pane: /split <aider|claude|codex|gentle|pi>");
+	assert.equal(splitCommandInfo(undefined).description, "Branch this conversation into another agent in a new Herdr pane: /split <claude|codex|gentle|pi>");
+});
+
+test("a malformed agents.json does not break registering /split", () => {
+	const f = join(mkdtempSync(join(tmpdir(), "herdr-split-cfg-")), "agents.json");
+	writeFileSync(f, "{ not json");
+	const info = splitCommandInfo(f);
+	assert.match(info.description, new RegExp(`^Branch this conversation into another agent in a new Herdr pane: /split <claude\\|codex\\|gentle\\|pi> \\(ignoring ${f.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}: .+\\)$`));
+	assert.deepEqual(info.getArgumentCompletions("g")?.map((i) => i.value), ["gentle"]);
 });
 
 test("/split gentle: picks a turn newest-first, branches the Pi session natively and launches", async () => {

@@ -1,19 +1,6 @@
 /**
- * herdr-split CLI.
- *
- *   herdr-split launch --agent <name> --source-kind pi|claude --session <file> --cut <id>
- *                      [--branched <file>] [--source-agent <name>] [--ratio 0.5] [--no-focus]
- *       Split the calling Herdr pane and continue the conversation in <agent>. Used by
- *       adapters that already chose the branch point (the Pi extension).
- *
- *   herdr-split split --agent <name> --source-kind pi|claude (--session <file> | --session-id <id>)
- *                     [--source-agent <name>] [--ratio 0.5] [--no-focus]
- *       Split the calling pane and pick the branch point with fzf inside the new pane.
- *       Used by adapters that cannot show a picker (the Claude Code command).
- *
- *   herdr-split agents     List known agents.
- *
- * Internal: `pick` (runs inside the new pane) and `notify` (submits the split notice).
+ * herdr-split CLI. Its commands and options are documented in ./help.ts, which also renders
+ * `herdr-split help` (and `--help`, `help --json`); keep OPTIONS in line with that table.
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -22,6 +9,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { helpJson, helpText, slashUsage, usageLine } from "./help.ts";
 import { readSession, type SourceKind } from "./sessions.ts";
 import {
 	listAgents,
@@ -80,7 +68,7 @@ export function findClaudeSession(id: string): string {
 	throw new UsageError(`No Claude Code session ${id} under ${root}`);
 }
 
-const OPTIONS = {
+export const OPTIONS = {
 	agent: { type: "string" },
 	"source-kind": { type: "string" },
 	session: { type: "string" },
@@ -94,6 +82,9 @@ const OPTIONS = {
 	pane: { type: "string" },
 	"notice-file": { type: "string" },
 	timeout: { type: "string", default: "120000" },
+	json: { type: "boolean", default: false },
+	slash: { type: "boolean", default: false },
+	help: { type: "boolean", short: "h", default: false },
 } as const;
 
 type Values = ReturnType<typeof parseArgs<{ options: typeof OPTIONS; allowPositionals: true }>>["values"];
@@ -212,13 +203,20 @@ export async function main(argv: string[]): Promise<number> {
 	try {
 		const { values, positionals } = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
 		const [command] = positionals;
-		if (command === "launch") await launch(values);
+		if ((values.json || values.slash) && command !== "help" && !values.help) throw new UsageError("--json and --slash only work with help");
+		if (values.json && values.slash) throw new UsageError("--json and --slash cannot be combined");
+		if (command === "help" || values.help) {
+			const agents = listAgents(configFile());
+			if (values.json) console.log(JSON.stringify(helpJson(agents), null, 2));
+			else if (values.slash) console.log(`herdr-split: usage: ${slashUsage(agents)}`);
+			else process.stdout.write(helpText(agents));
+		} else if (command === "launch") await launch(values);
 		else if (command === "split") await split(values);
 		else if (command === "pick") return await pick(values);
 		else if (command === "notify") await notify(values);
 		else if (command === "agents") {
 			for (const a of listAgents(configFile())) console.log(`${a.name}\t${a.exec}`);
-		} else throw new UsageError(`Usage: herdr-split <launch|split|agents> [options]${command ? ` (unknown command "${command}")` : ""}`);
+		} else throw new UsageError(`${usageLine()}${command ? ` (unknown command "${command}")` : ""}`);
 		return 0;
 	} catch (error) {
 		console.error(`herdr-split: ${(error as Error).message}`);

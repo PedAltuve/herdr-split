@@ -6,7 +6,7 @@ import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { agentCompletions, runSplit } from "./split-command.ts";
+import { runSplit, splitCommandInfo } from "./split-command.ts";
 
 const BIN = join(dirname(realpathSync(fileURLToPath(import.meta.url))), "..", "bin", "herdr-split");
 
@@ -29,21 +29,20 @@ function launchCli(args: string[], cwd: string): Promise<{ pane: string; command
 export default function (pi: ExtensionAPI) {
 	if (process.env.GENTLE_PI_AGENTS_CHILD === "1") return;
 
+	const configFile = join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "herdr-split", "agents.json");
 	pi.registerCommand("split", {
-		description: "Branch this conversation into another agent in a new Herdr pane: /split <claude|gentle|pi|codex>",
-		getArgumentCompletions: agentCompletions,
+		...splitCommandInfo(configFile),
 		handler: async (args, ctx) => {
 			const sessionFile = ctx.sessionManager.getSessionFile();
 			if (!sessionFile) {
 				ctx.ui.notify("/split needs a saved session.", "error");
 				return;
 			}
-			const configHome = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
 			await runSplit(args, {
 				env: process.env,
 				sessionFile,
 				leafId: ctx.sessionManager.getLeafId() ?? undefined,
-				configFile: join(configHome, "herdr-split", "agents.json"),
+				configFile,
 				select: (title, options) => ctx.ui.select(title, options),
 				notify: (msg, level) => ctx.ui.notify(msg, level),
 				// A separate manager keeps the live session untouched.
