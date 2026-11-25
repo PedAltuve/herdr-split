@@ -73,3 +73,18 @@ test("an agent named like a built-in role shadows it instead of failing", () => 
 	const roles = listRoles(undefined, agents);
 	assert.equal(roles.some((r) => r.name === "judge"), false);
 });
+
+test("S1: a malformed or non-object roles.json is a UsageError naming the file", () => {
+	const dir = mkdtempSync(join(tmpdir(), "herdr-split-roles-"));
+	const bad = join(dir, "roles.json");
+	writeFileSync(bad, "{ not json");
+	assert.throws(() => listRoles(bad, listAgents()), (e) => e instanceof UsageError && e.message.startsWith(`Cannot read ${bad}: `) && e.message.length > `Cannot read ${bad}: `.length);
+	for (const content of ["[]", "null", "3"]) {
+		writeFileSync(bad, content);
+		assert.throws(() => listRoles(bad, listAgents()), (e) => e instanceof UsageError && e.message === `Cannot read ${bad}: expected a JSON object`, content);
+	}
+});
+
+test("S3: resolveTarget throws a UsageError for an unknown agent, message unchanged", () => {
+	assert.throws(() => resolveTarget({ agent: "vim" }), (e) => e instanceof UsageError && e.message === 'Unknown agent "vim". Known agents: claude, codex, gentle, pi. Known roles: judge');
+});

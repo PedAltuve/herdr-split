@@ -26,11 +26,24 @@ const BUILTIN: Record<string, Omit<Agent, "name">> = {
 	codex: { exec: "codex", format: null },
 };
 
+/** Parse a JSON object config file; any problem is a UsageError naming the file. */
+export function readConfigObject(file: string): Record<string, unknown> {
+	const fail = (reason: string) => new UsageError(`Cannot read ${file}: ${reason}`);
+	let data: unknown;
+	try {
+		data = JSON.parse(readFileSync(file, "utf8"));
+	} catch (error) {
+		throw fail(error instanceof Error ? error.message : String(error));
+	}
+	if (typeof data !== "object" || data === null || Array.isArray(data)) throw fail("expected a JSON object");
+	return data as Record<string, unknown>;
+}
+
 /** Built-in agents plus `{ "<name>": { "exec": "...", "format": "pi" | "claude" | null } }` from the config file. */
 export function listAgents(configFile?: string): Agent[] {
 	const agents: Record<string, Omit<Agent, "name">> = { ...BUILTIN };
 	if (configFile && existsSync(configFile)) {
-		const extra = JSON.parse(readFileSync(configFile, "utf8")) as Record<string, { exec: string; format?: SourceKind | null }>;
+		const extra = readConfigObject(configFile) as Record<string, { exec: string; format?: SourceKind | null }>;
 		for (const [key, value] of Object.entries(extra)) agents[key] = { exec: value.exec, format: value.format ?? null };
 	}
 	return Object.keys(agents)
@@ -41,7 +54,7 @@ export function listAgents(configFile?: string): Agent[] {
 export function resolveAgent(name: string, configFile?: string): Agent {
 	const agents = listAgents(configFile);
 	const found = agents.find((a) => a.name === name);
-	if (!found) throw new Error(`Unknown agent "${name}". Known agents: ${agents.map((a) => a.name).join(", ")}`);
+	if (!found) throw new UsageError(`Unknown agent "${name}". Known agents: ${agents.map((a) => a.name).join(", ")}`);
 	return found;
 }
 
@@ -75,7 +88,7 @@ export function splitNotice(opts: {
 		"Do not act on, continue, or redo any request from earlier messages: the original conversation owns them.",
 		`The original conversation is probably still changing files in ${opts.cwd}: re-read files before you rely on them, avoid editing the files it is working on, and never revert, reset, stash, checkout or clean changes you did not make.`,
 		opts.role
-			? `Your role in this split is "${opts.role.name}". Do this now: ${opts.role.prompt}`
+			? `Your role in this split is "${opts.role.name}". Do this now: ${opts.role.prompt.replace(/\s+/g, " ").trim()}`
 			: "Reply with one short line confirming you understand, then wait for the user's next instruction.",
 	];
 	return parts.join(" ");

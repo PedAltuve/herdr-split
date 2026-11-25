@@ -2,8 +2,8 @@
  * Roles: a name for a split plus an instruction for the agent that gets it, optionally pinned
  * to an agent. Built-ins live here; `roles.json` next to `agents.json` adds or overrides them.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { listAgents, UsageError, type Agent } from "./split.ts";
+import { existsSync } from "node:fs";
+import { listAgents, readConfigObject, UsageError, type Agent } from "./split.ts";
 
 export interface Role {
 	name: string;
@@ -35,7 +35,7 @@ export function listRoles(rolesFile: string | undefined, agents: Agent[]): Role[
 	// A user agent named like a built-in role shadows that role; only roles.json clashes are errors.
 	const roles: Record<string, Omit<Role, "name">> = Object.fromEntries(Object.entries(BUILTIN).filter(([name]) => !agents.some((a) => a.name === name)));
 	if (rolesFile && existsSync(rolesFile)) {
-		const extra = JSON.parse(readFileSync(rolesFile, "utf8")) as Record<string, { agent?: unknown; prompt?: unknown }>;
+		const extra = readConfigObject(rolesFile) as Record<string, { agent?: unknown; prompt?: unknown }>;
 		for (const [name, value] of Object.entries(extra)) {
 			if (!NAME_RE.test(name)) throw new UsageError(`Role name "${name}" must match ${NAME_PATTERN} (roles.json)`);
 			if (agents.some((a) => a.name === name)) throw new UsageError(`Role "${name}" has the same name as an agent; rename it in roles.json`);
@@ -72,7 +72,7 @@ export function resolveTarget(sel: { agent?: string; role?: string }, agentsFile
 		agent = agents.find((a) => a.name === sel.agent);
 		if (!agent) {
 			role = roles.find((r) => r.name === sel.agent);
-			if (!role) throw new Error(`Unknown agent "${sel.agent}". Known agents: ${agents.map((a) => a.name).join(", ")}. Known roles: ${roleNames}`);
+			if (!role) throw new UsageError(`Unknown agent "${sel.agent}". Known agents: ${agents.map((a) => a.name).join(", ")}. Known roles: ${roleNames}`);
 			if (sel.role) throw new UsageError(`--agent ${sel.agent} is a role; it cannot be combined with --role`);
 		}
 	}

@@ -14,7 +14,7 @@ interface OptionDoc {
 }
 
 const OPTION_DOCS: Record<string, OptionDoc> = {
-	agent: { value: "<name>", description: "Agent to start in the new pane (see `herdr-split agents`), or a role (see `herdr-split roles`)." },
+	agent: { value: "<name>", description: "Agent to start in the new pane (see `herdr-split agents`), or a role (see `herdr-split roles`). Required unless --role is given." },
 	role: { value: "<name>", description: "Role for the new split: its prompt tells the agent what to do. Without an agent, the role's agent (else the source agent) is used." },
 	name: { value: "<name>", description: "Name of the split: labels the pane and the agent, and the notice tells the agent. Must match ^[a-z][a-z0-9_-]{0,31}$." },
 	"source-kind": { value: "pi|claude", description: "Session format of the conversation being split." },
@@ -49,13 +49,13 @@ export const COMMANDS: CommandDoc[] = [
 	{
 		name: "launch",
 		synopsis: [
-			"herdr-split launch --agent <name> --source-kind pi|claude --session <file> --cut <id>",
-			"                   [--branched <file>] [--role <name>] [--name <name>] [--source-agent <name>]",
+			"herdr-split launch (--agent <name> | --role <name>) --source-kind pi|claude --session <file> --cut <id>",
+			"                   [--branched <file>] [--name <name>] [--source-agent <name>]",
 			"                   [--ratio 0.5] [--no-focus]",
 		],
 		summary: "Split at a branch point the adapter already chose (Pi).",
 		options: [
-			{ name: "agent", required: true },
+			{ name: "agent" },
 			{ name: "source-kind", required: true },
 			{ name: "session", required: true },
 			{ name: "cut", required: true },
@@ -66,11 +66,11 @@ export const COMMANDS: CommandDoc[] = [
 	{
 		name: "split",
 		synopsis: [
-			"herdr-split split  --agent <name> --source-kind pi|claude (--session <file> | --session-id <id>)",
-			"                   [--role <name>] [--name <name>] [--source-agent <name>] [--ratio 0.5] [--no-focus]",
+			"herdr-split split  (--agent <name> | --role <name>) --source-kind pi|claude (--session <file> | --session-id <id>)",
+			"                   [--name <name>] [--source-agent <name>] [--ratio 0.5] [--no-focus]",
 		],
 		summary: "Split and pick the branch point with fzf in the new pane (Claude Code).",
-		options: [{ name: "agent", required: true }, { name: "source-kind", required: true }, { name: "session" }, { name: "session-id" }, ...SPLIT_OPTIONS],
+		options: [{ name: "agent" }, { name: "source-kind", required: true }, { name: "session" }, { name: "session-id" }, ...SPLIT_OPTIONS],
 	},
 	{ name: "agents", synopsis: ["herdr-split agents"], summary: "List the known agents and the command each one runs.", options: [] },
 	{ name: "roles", synopsis: ["herdr-split roles"], summary: "List the known roles, the agent each uses and its prompt.", options: [] },

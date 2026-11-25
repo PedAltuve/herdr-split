@@ -8,6 +8,13 @@ import { listAgents, type Agent } from "../core/split.ts";
  * Agents and roles for hints only: an unreadable or malformed config falls back to the built-ins
  * so /split still registers; `problem` says why (running /split reports the error too).
  */
+/** The reason a config failed to load, without the "Cannot read <file>: " prefix that `ignoring <file>` already says. */
+function reason(error: unknown, file: string | undefined): string {
+	const message = error instanceof Error ? error.message : String(error);
+	const prefix = `Cannot read ${file}: `;
+	return message.startsWith(prefix) ? message.slice(prefix.length) : message;
+}
+
 function hints(configFile: string | undefined, rolesFile: string | undefined): { agents: Agent[]; roles: Role[]; problem?: string } {
 	const problems: string[] = [];
 	let agents: Agent[];
@@ -15,7 +22,7 @@ function hints(configFile: string | undefined, rolesFile: string | undefined): {
 		agents = listAgents(configFile);
 	} catch (error) {
 		agents = listAgents();
-		problems.push(`ignoring ${configFile}: ${error instanceof Error ? error.message : String(error)}`);
+		problems.push(`ignoring ${configFile}: ${reason(error, configFile)}`);
 	}
 	let roles: Role[];
 	try {
@@ -26,7 +33,7 @@ function hints(configFile: string | undefined, rolesFile: string | undefined): {
 		} catch {
 			roles = [];
 		}
-		problems.push(`ignoring ${rolesFile}: ${error instanceof Error ? error.message : String(error)}`);
+		problems.push(`ignoring ${rolesFile}: ${reason(error, rolesFile)}`);
 	}
 	return { agents, roles, problem: problems.length ? problems.join("; ") : undefined };
 }

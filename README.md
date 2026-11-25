@@ -114,11 +114,11 @@ Create `~/.config/herdr-split/agents.json` (or under `$XDG_CONFIG_HOME`):
 ## CLI reference
 
 ```
-herdr-split launch --agent <name> --source-kind pi|claude --session <file> --cut <id>
-                   [--branched <file>] [--role <name>] [--name <name>] [--source-agent <name>]
+herdr-split launch (--agent <name> | --role <name>) --source-kind pi|claude --session <file> --cut <id>
+                   [--branched <file>] [--name <name>] [--source-agent <name>]
                    [--ratio 0.5] [--no-focus]
-herdr-split split  --agent <name> --source-kind pi|claude (--session <file> | --session-id <id>)
-                   [--role <name>] [--name <name>] [--source-agent <name>] [--ratio 0.5] [--no-focus]
+herdr-split split  (--agent <name> | --role <name>) --source-kind pi|claude (--session <file> | --session-id <id>)
+                   [--name <name>] [--source-agent <name>] [--ratio 0.5] [--no-focus]
 herdr-split agents
 herdr-split roles
 herdr-split help [--json | --slash]
@@ -130,7 +130,7 @@ herdr-split help [--json | --slash]
 - `roles`: List the known roles, the agent each uses and its prompt.
 - `help`: Show this help, as JSON, or as the /split usage line.
 
-`--agent` may name an agent or a role; `--role` adds a role to an agent; `--name` names the split.
+`--agent` is required unless `--role` is given; it may name an agent or a role. `--role` adds a role to an agent (alone, it uses the role's agent); `--name` names the split. `--name` and `--role` can each be given once. A malformed `agents.json` or `roles.json` exits 2 with `Cannot read <path>: <reason>`.
 
 `herdr-split help` (or `--help`, `-h`) lists every option and the known agents and roles, including those from `agents.json` and `roles.json`. `herdr-split help --json` gives the same as JSON, so an agent can learn the tool by running it. This section is checked against that help by `core/help.test.ts`.
 
