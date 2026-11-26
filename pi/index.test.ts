@@ -38,14 +38,14 @@ async function register(config: string | undefined): Promise<Record<string, Regi
 
 test("the extension registers /split with the agents from agents.json", async () => {
 	const split = (await register(JSON.stringify({ aider: { exec: "aider", format: null } }))).split!;
-	assert.equal(split.description, "Branch this conversation into another agent in a new Herdr pane: /split <aider|claude|codex|gentle|pi|judge> [<role>] [--name <name>] (agents: aider|claude|codex|gentle|pi; roles: judge)");
+	assert.equal(split.description, "Branch this conversation into another agent in a new Herdr pane: /split <aider|claude|codex|gentle|pi|judge> [<role>] [--name <name>] [<prompt>] (agents: aider|claude|codex|gentle|pi; roles: judge)");
 	assert.deepEqual(split.getArgumentCompletions("a")?.map((i) => i.value), ["aider"]);
 	assert.equal(typeof split.handler, "function");
 });
 
 test("without agents.json the extension registers /split with the built-ins", async () => {
 	const split = (await register(undefined)).split!;
-	assert.equal(split.description, "Branch this conversation into another agent in a new Herdr pane: /split <claude|codex|gentle|pi|judge> [<role>] [--name <name>] (agents: claude|codex|gentle|pi; roles: judge)");
+	assert.equal(split.description, "Branch this conversation into another agent in a new Herdr pane: /split <claude|codex|gentle|pi|judge> [<role>] [--name <name>] [<prompt>] (agents: claude|codex|gentle|pi; roles: judge)");
 	assert.deepEqual(split.getArgumentCompletions("")?.map((i) => i.value), ["claude", "codex", "gentle", "pi", "judge"]);
 });
 

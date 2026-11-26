@@ -17,6 +17,9 @@ const OPTION_DOCS: Record<string, OptionDoc> = {
 	agent: { value: "<name>", description: "Agent to start in the new pane (see `herdr-split agents`), or a role (see `herdr-split roles`). Required unless --role is given." },
 	role: { value: "<name>", description: "Role for the new split: its prompt tells the agent what to do. Without an agent, the role's agent (else the source agent) is used." },
 	name: { value: "<name>", description: "Name of the split: labels the pane and the agent, and the notice tells the agent. Must match ^[a-z][a-z0-9_-]{0,31}$." },
+	prompt: { value: "<text>", description: "Instruction for the new agent to act on now, sent with the split notice. One line (whitespace collapsed), at most 4000 characters." },
+	"prompt-file": { value: "<file>", description: "Internal: read the prompt from this file and delete it (how split hands the prompt to pick without typing it into a shell)." },
+	"args-from-transcript": { description: "Read the /split arguments (agent, role, --name, prompt) from the last /split in the Claude Code transcript instead of --agent/--role/--name/--prompt; invalid or empty arguments print the /split usage and exit 2." },
 	"source-kind": { value: "pi|claude", description: "Session format of the conversation being split." },
 	session: { value: "<file>", description: "Session file of the conversation being split." },
 	"session-id": { value: "<id>", description: "Claude Code session id; its file is found under ~/.claude/projects." },
@@ -43,14 +46,14 @@ export interface CommandDoc {
 	internal?: boolean;
 }
 
-const SPLIT_OPTIONS = [{ name: "role" }, { name: "name" }, { name: "source-agent" }, { name: "ratio" }, { name: "no-focus" }];
+const SPLIT_OPTIONS = [{ name: "role" }, { name: "name" }, { name: "prompt" }, { name: "source-agent" }, { name: "ratio" }, { name: "no-focus" }];
 
 export const COMMANDS: CommandDoc[] = [
 	{
 		name: "launch",
 		synopsis: [
 			"herdr-split launch (--agent <name> | --role <name>) --source-kind pi|claude --session <file> --cut <id>",
-			"                   [--branched <file>] [--name <name>] [--source-agent <name>]",
+			"                   [--branched <file>] [--name <name>] [--prompt <text>] [--source-agent <name>]",
 			"                   [--ratio 0.5] [--no-focus]",
 		],
 		summary: "Split at a branch point the adapter already chose (Pi).",
@@ -66,11 +69,12 @@ export const COMMANDS: CommandDoc[] = [
 	{
 		name: "split",
 		synopsis: [
-			"herdr-split split  (--agent <name> | --role <name>) --source-kind pi|claude (--session <file> | --session-id <id>)",
-			"                   [--name <name>] [--source-agent <name>] [--ratio 0.5] [--no-focus]",
+			"herdr-split split  (--agent <name> | --role <name> | --args-from-transcript) --source-kind pi|claude",
+			"                   (--session <file> | --session-id <id>) [--name <name>] [--prompt <text>]",
+			"                   [--source-agent <name>] [--ratio 0.5] [--no-focus]",
 		],
 		summary: "Split and pick the branch point with fzf in the new pane (Claude Code).",
-		options: [{ name: "agent" }, { name: "source-kind", required: true }, { name: "session" }, { name: "session-id" }, ...SPLIT_OPTIONS],
+		options: [{ name: "agent" }, { name: "source-kind", required: true }, { name: "session" }, { name: "session-id" }, { name: "args-from-transcript" }, ...SPLIT_OPTIONS],
 	},
 	{ name: "agents", synopsis: ["herdr-split agents"], summary: "List the known agents and the command each one runs.", options: [] },
 	{ name: "roles", synopsis: ["herdr-split roles"], summary: "List the known roles, the agent each uses and its prompt.", options: [] },
@@ -80,7 +84,7 @@ export const COMMANDS: CommandDoc[] = [
 		summary: "Show this help, as JSON, or as the /split usage line.",
 		options: [{ name: "json" }, { name: "slash" }, { name: "help" }],
 	},
-	{ name: "pick", synopsis: [], summary: "Choose the branch point with fzf, then start the agent.", options: [{ name: "source-pane" }, { name: "role" }, { name: "name" }], internal: true },
+	{ name: "pick", synopsis: [], summary: "Choose the branch point with fzf, then start the agent.", options: [{ name: "source-pane" }, { name: "role" }, { name: "name" }, { name: "prompt" }, { name: "prompt-file" }], internal: true },
 	{ name: "notify", synopsis: [], summary: "Submit the split notice once the agent is ready.", options: [{ name: "pane" }, { name: "notice-file" }, { name: "timeout" }, { name: "name" }], internal: true },
 ];
 
@@ -106,7 +110,7 @@ export function usageLine(): string {
 export function slashUsage(agents: Agent[], roles: Role[]): string {
 	const agentList = agents.map((a) => a.name).join("|");
 	const roleList = roles.map((r) => r.name).join("|");
-	return `/split <${[agentList, roleList].filter(Boolean).join("|")}> [<role>] [--name <name>] (agents: ${agentList}; roles: ${roleList})`;
+	return `/split <${[agentList, roleList].filter(Boolean).join("|")}> [<role>] [--name <name>] [<prompt>] (agents: ${agentList}; roles: ${roleList})`;
 }
 
 function flag(name: string): string {

@@ -11,7 +11,7 @@ import { listRoles } from "./roles.ts";
 import { listAgents } from "./split.ts";
 
 const BIN = fileURLToPath(new URL("../bin/herdr-split", import.meta.url));
-const SLASH = "/split <aider|claude|codex|gentle|pi|judge> [<role>] [--name <name>] (agents: aider|claude|codex|gentle|pi; roles: judge)";
+const SLASH = "/split <aider|claude|codex|gentle|pi|judge> [<role>] [--name <name>] [<prompt>] (agents: aider|claude|codex|gentle|pi; roles: judge)";
 const README = fileURLToPath(new URL("../README.md", import.meta.url));
 
 /** Run the CLI with a config dir that adds one agent. */
@@ -136,6 +136,13 @@ test("drift: the README usage shows /split with exactly the built-in agents and 
 	assert.deepEqual(shown, [...listAgents().map((a) => a.name), ...listRoles(undefined, listAgents()).map((r) => r.name)].sort());
 	assert.match(usage, /^\/split \S+ \S+/m);
 	assert.match(usage, /--name <name>|--name \w+/);
+	// an example line that ends in a free-text prompt: a word that is not an agent, role, option or option value
+	const words = new Set([...listAgents().map((a) => a.name), ...listRoles(undefined, listAgents()).map((r) => r.name)]);
+	const withPrompt = usage.split("\n").filter((l) => /^\/split \S+/.test(l)).map((l) => l.replace(/\s+#.*$/, "").trim().split(/\s+/).slice(1)).filter((t) => {
+		const rest = t.filter((w, i) => !(w === "--name" || t[i - 1] === "--name"));
+		return rest.length >= 2 && !words.has(rest[rest.length - 1]!) && !rest[rest.length - 1]!.startsWith("--");
+	});
+	assert.ok(withPrompt.length > 0, "README usage needs an example ending in a free-text prompt");
 });
 
 test("drift: the README documents roles.json and every option the table lists", () => {
@@ -164,4 +171,18 @@ test("--help with --json after another command prints the help JSON", () => {
 test("S5: help text and the README say --agent is required unless --role is given", () => {
 	assert.match(run("help").stdout, /--agent <name> +.*Required unless --role is given\./);
 	assert.match(readFileSync(README, "utf8"), /`--agent` is required unless `--role` is given/);
+});
+
+test("S6: help, help --json and the README document --prompt and --args-from-transcript", () => {
+	const text = run("help").stdout;
+	assert.match(text, /--prompt <text> +.*4000/);
+	assert.match(text, /--args-from-transcript +Read the \/split arguments .*Claude Code transcript/);
+	assert.match(text, /\[--prompt <text>\]/);
+	const doc = JSON.parse(run("help", "--json").stdout);
+	for (const c of ["launch", "split"]) assert.ok(doc.commands.find((x: { name: string }) => x.name === c).options.some((o: { flag: string; value?: string }) => o.flag === "--prompt" && o.value === "<text>"), c);
+	assert.ok(doc.commands.find((x: { name: string }) => x.name === "split").options.some((o: { flag: string }) => o.flag === "--args-from-transcript"));
+	const readme = readFileSync(README, "utf8");
+	assert.match(readme, /## Prompt/);
+	for (const flag of ["--prompt", "--args-from-transcript"]) assert.ok(readme.includes(flag), `README misses ${flag}`);
+	assert.match(readme.split("## Usage")[1]!.split("\n## ")[0]!, /^\/split gentle \S+ \S+/m);
 });

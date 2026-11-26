@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { slashUsage } from "../core/help.ts";
 import { listRoles } from "../core/roles.ts";
 import { listAgents } from "../core/split.ts";
-import { agentCompletions, parseSplitArgs, runSplit, splitCommandInfo, type SplitDeps } from "./split-command.ts";
+import { agentCompletions, runSplit, splitCommandInfo, type SplitDeps } from "./split-command.ts";
 
 const jsonl = (rows: unknown[]) => rows.map((r) => JSON.stringify(r)).join("\n") + "\n";
 
@@ -70,16 +70,6 @@ test("after an agent, completions offer the roles for the second word", () => {
 	assert.equal(agentCompletions("gentle judge "), null);
 });
 
-test("parseSplitArgs reads up to two words and --name", () => {
-	assert.deepEqual(parseSplitArgs("gentle"), { words: ["gentle"] });
-	assert.deepEqual(parseSplitArgs("  gentle   judge --name rev "), { words: ["gentle", "judge"], name: "rev" });
-	assert.deepEqual(parseSplitArgs("--name=rev judge"), { words: ["judge"], name: "rev" });
-	assert.deepEqual(parseSplitArgs(""), { words: [] });
-	assert.deepEqual(parseSplitArgs("a b c"), { words: ["a", "b", "c"], error: "Usage: /split <agent> [<role>] [--name <name>] (at most two words)" });
-	assert.equal(parseSplitArgs("gentle --name").error, "--name needs a value");
-	assert.equal(parseSplitArgs("gentle --bogus").error, 'Unknown option "--bogus"');
-});
-
 function config(): string {
 	const f = join(mkdtempSync(join(tmpdir(), "herdr-split-cfg-")), "agents.json");
 	writeFileSync(f, JSON.stringify({ aider: { exec: "aider", format: null } }));
@@ -90,7 +80,7 @@ test("the registered /split completions and description include agents from agen
 	const info = splitCommandInfo(config());
 	assert.deepEqual(info.getArgumentCompletions("a")?.map((i) => i.value), ["aider"]);
 	assert.equal(info.description, `Branch this conversation into another agent in a new Herdr pane: ${slashUsage(listAgents(config()), listRoles(undefined, listAgents(config())))}`);
-	assert.match(info.description, /\/split <aider\|claude\|codex\|gentle\|pi\|judge> \[<role>\] \[--name <name>\]/);
+	assert.match(info.description, /\/split <aider\|claude\|codex\|gentle\|pi\|judge> \[<role>\] \[--name <name>\] \[<prompt>\]/);
 	assert.match(splitCommandInfo(undefined).description, /: \/split <claude\|codex\|gentle\|pi\|judge> .*roles: judge\)$/);
 });
 
@@ -161,6 +151,31 @@ test("/split gentle --name reviewer passes the name to the core", async () => {
 	assert.deepEqual(log.launched, [["launch", "--agent", "gentle", "--source-kind", "pi", "--session", file, "--cut", "a2", "--branched", "/sessions/branched.jsonl", "--name", "reviewer"]]);
 });
 
+test("S1: /split gentle <prompt> passes the prompt to the core with --prompt, after the name", async () => {
+	const { d, log, file } = deps();
+	await runSplit("gentle --name rev haz un judge\ndel PR X", d);
+	assert.deepEqual(log.launched, [["launch", "--agent", "gentle", "--source-kind", "pi", "--session", file, "--cut", "a2", "--branched", "/sessions/branched.jsonl", "--name", "rev", "--prompt", "haz un judge del PR X"]]);
+	assert.deepEqual(log.notify, [["Split opened in pane w1:p5 with gentle.", "info"]]);
+});
+
+test("S1: /split gentle judge <prompt> keeps the role and sends the prompt; a non-role second word is prompt", async () => {
+	const withRole = deps();
+	await runSplit("claude judge revisa el PR", withRole.d);
+	assert.deepEqual(withRole.log.launched, [["launch", "--agent", "claude", "--role", "judge", "--source-kind", "pi", "--session", withRole.file, "--cut", "a2", "--prompt", "revisa el PR"]]);
+	const noRole = deps();
+	await runSplit("claude nope at all", noRole.d);
+	assert.deepEqual(noRole.log.launched, [["launch", "--agent", "claude", "--source-kind", "pi", "--session", noRole.file, "--cut", "a2", "--prompt", "nope at all"]]);
+});
+
+test("S2: a prompt over 4000 characters is reported before anything is picked, branched or launched", async () => {
+	const { d, log } = deps();
+	await runSplit(`gentle ${"a".repeat(4001)}`, d);
+	assert.deepEqual(log.notify, [["The prompt is 4001 characters long; the limit is 4000", "error"]]);
+	assert.deepEqual(log.launched, []);
+	assert.deepEqual(log.branched, []);
+	assert.equal(log.selectOptions, undefined);
+});
+
 test("/split judge: a role alone launches with --agent <role>, branching natively as the role's agent is gentle", async () => {
 	const { d, log, file } = deps();
 	await runSplit("judge", d);
@@ -175,11 +190,10 @@ test("/split claude judge: agent plus role, no native branch for a non-pi agent"
 	assert.deepEqual(log.launched, [["launch", "--agent", "claude", "--role", "judge", "--source-kind", "pi", "--session", file, "--cut", "a2"]]);
 });
 
-test("/split with an invalid name, a bad role or too many words reports it and launches nothing", async () => {
+test("/split with an invalid name, an unknown agent or a missing name value reports it and launches nothing", async () => {
 	for (const [args, message] of [
 		["gentle --name Bad", '--name must match ^[a-z][a-z0-9_-]{0,31}$, got "Bad"'],
-		["gentle nope", 'Unknown role "nope". Known roles: judge'],
-		["a b c", "Usage: /split <agent> [<role>] [--name <name>] (at most two words)"],
+		["vim", 'Unknown agent "vim". Known agents: claude, codex, gentle, pi. Known roles: judge'],
 		["gentle --name", "--name needs a value"],
 	] as const) {
 		const { d, log } = deps();
