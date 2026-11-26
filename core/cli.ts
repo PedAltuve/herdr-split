@@ -320,9 +320,12 @@ export async function main(argv: string[]): Promise<number> {
 		else if (command === "pick") return await pick(values);
 		else if (command === "notify") await notify(values);
 		else if (command === "roles") {
-			const { roles, skipped } = loadRoles(configFile("roles.json"), listAgents(configFile()));
-			const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
-			for (const r of roles) console.log(`${r.name}\t${r.agent ?? "-"}\t${oneLine(r.prompt)}\t${r.source}`);
+			const rolesFile = configFile("roles.json");
+			const { roles, skipped } = loadRoles(rolesFile, listAgents(configFile()));
+			for (const s of skipped) console.error(`herdr-split: ignoring ${s.source}: ${s.reason}`);
+			// A role file's body is Markdown over several lines; roles.json and built-in prompts stay as they are.
+			const shown = (r: Role) => (r.source === "built-in" || r.source === rolesFile ? r.prompt : r.prompt.replace(/\s+/g, " ").trim());
+			for (const r of roles) console.log(`${r.name}\t${r.agent ?? "-"}\t${shown(r)}\t${r.source}`);
 			for (const s of skipped) console.log(`${s.name}\t-\tignored: ${s.reason}\t${s.source}`);
 		} else if (command === "agents") {
 			for (const a of listAgents(configFile())) console.log(`${a.name}\t${a.exec}`);

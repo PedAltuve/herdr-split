@@ -132,6 +132,13 @@ test("S3: asking for a shadowed name gets the role that won", () => {
 	assert.match(role!.prompt, /judgment-day/);
 });
 
+test("S3: a project role named like an Object.prototype key is a new role, not a clash", () => {
+	const f = fixture({ project: { "constructor.md": "Construct a plan.", "tostring.md": "x" } });
+	const { roles, skipped } = loadRoles(f.rolesFile, listAgents(), f.cwd);
+	assert.deepEqual(skipped, []);
+	assert.equal(roles.find((r) => r.name === "constructor")?.prompt, "Construct a plan.");
+});
+
 test("roles.json errors still stop everything (unchanged)", () => {
 	const f = fixture({ rolesJson: { pi: { prompt: "x" } }, project: { "ok.md": "Fine." } });
 	assert.throws(() => listRoles(f.rolesFile, listAgents(), f.cwd), (e) => e instanceof UsageError && e.message === 'Role "pi" has the same name as an agent; rename it in roles.json');

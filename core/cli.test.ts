@@ -821,7 +821,7 @@ test("S6: roles lists each role's source and the skipped role files", () => {
 	const dir = join(root, ".herdr-split", "roles");
 	const res = spawnSync(BIN, ["roles"], { env: sb.env, encoding: "utf8", cwd: root });
 	assert.equal(res.status, 0, res.stderr);
-	assert.equal(res.stderr, "");
+	assert.equal(res.stderr, `herdr-split: ignoring ${join(dir, "ghost.md")}: it uses unknown agent "vim"\n`);
 	assert.equal(
 		res.stdout,
 		[
@@ -844,4 +844,13 @@ test("S6: help --json gives each role's source", () => {
 		["fresh", join(root, ".herdr-split", "roles", "fresh.md")],
 		["judge", "built-in"],
 	]);
+});
+
+test("roles keeps a roles.json prompt byte for byte; only role-file prompts are collapsed", () => {
+	const sb = sandbox();
+	writeConfig(sb, "roles.json", { json: { prompt: "first\nsecond\tthird" } });
+	const res = spawnSync(BIN, ["roles"], { env: sb.env, encoding: "utf8" });
+	assert.equal(res.status, 0, res.stderr);
+	assert.equal(res.stderr, "");
+	assert.ok(res.stdout.startsWith(`json\t-\tfirst\nsecond\tthird\t${join(sb.env.XDG_CONFIG_HOME, "herdr-split", "roles.json")}\n`), res.stdout);
 });

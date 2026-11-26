@@ -85,7 +85,7 @@ Critique the plan discussed so far.
 - List its weakest assumptions, one finding per line, each one usable on its own.
 ```
 
-- The whole body after the optional front-matter is the role's instruction (collapsed to one line in the notice, like a prompt). The front-matter takes only `agent`; without it the role splits into the source agent.
+- The whole body after the optional front-matter is the role's instruction (collapsed to one line in the notice, like a prompt, and in `herdr-split roles`). The front-matter takes only `agent`; without it the role splits into the source agent.
 - Order: a personal role file overrides `roles.json`, which overrides the built-ins.
 - A project role only adds a new name: a project file named like a personal, `roles.json` or built-in role is ignored with a warning and your role wins, so a cloned repository cannot redefine `judge`.
 - A role file that cannot be used (empty body, bad file name, a name like an agent, unknown agent, malformed front-matter) does not stop other splits: it is ignored with `herdr-split: ignoring <file>: <reason>` on stderr and listed by `herdr-split roles`. Asking for it (`/split <name>`) exits 2 with that reason before any pane is touched.

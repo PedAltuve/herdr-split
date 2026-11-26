@@ -142,7 +142,7 @@ export function loadRoles(rolesFile: string | undefined, agents: Agent[], cwd: s
 		// Project files come with the repository, which may be someone else's: they never replace a role you have.
 		const project = readRoleDir(join(root, ".herdr-split", "roles"), agents);
 		for (const { name, ...role } of project.roles) {
-			const existing = roles[name];
+			const existing = Object.hasOwn(roles, name) ? roles[name] : undefined;
 			if (existing) skipped.push({ name, source: role.source, reason: `a project role cannot replace the "${name}" role from ${existing.source}` });
 			else roles[name] = role;
 		}
