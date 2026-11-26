@@ -438,7 +438,7 @@ const NOT_SPLIT = "The last user message in the Claude Code transcript is not a 
 
 test("S2: launch --prompt ends the notice with the user's instruction, collapsed to one line", async () => {
 	const sb = sandbox();
-	const res = spawnSync(BIN, launchArgs(sb, "--agent", "claude", "--prompt", "haz un judge\n  del PR X"), { env: sb.env, encoding: "utf8" });
+	const res = spawnSync(BIN, launchArgs(sb, "--agent", "claude", "--prompt", "run a judge\n  on PR X"), { env: sb.env, encoding: "utf8" });
 	assert.equal(res.status, 0, res.stderr);
 	assert.equal(res.stderr, "");
 	await until(() => (runs(sb).length === 2 ? true : undefined));
@@ -447,7 +447,7 @@ test("S2: launch --prompt ends the notice with the user's instruction, collapsed
 	assert.match(notice, /Do not act on, continue, or redo any request from earlier messages/);
 	assert.match(notice, /probably still changing files in \/repo/);
 	assert.doesNotMatch(notice, /wait for the user's next instruction/);
-	assert.match(notice, /The user's instruction for you in this split, to act on now: haz un judge del PR X$/);
+	assert.match(notice, /The user's instruction for you in this split, to act on now: run a judge on PR X$/);
 });
 
 test("S2: launch --role judge --prompt puts the role's instruction first and the prompt after it", async () => {
@@ -518,15 +518,15 @@ test("S4: pick --prompt submits the prompt in the notice", async () => {
 	writeFileSync(join(bindir, "codex"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
 	const session = piSession(sb.dir);
 	writeFileSync(session, readFileSync(session, "utf8").replace('"cwd":"/repo"', `"cwd":${JSON.stringify(sb.dir)}`));
-	const res = spawnSync(BIN, ["pick", "--agent", "codex", "--source-kind", "pi", "--session", session, "--source-pane", "w1:p1", "--source-agent", "gentle-shell", "--prompt", "haz algo"], { env: { ...sb.env, PATH: `${bindir}:${process.env.PATH}` }, encoding: "utf8" });
+	const res = spawnSync(BIN, ["pick", "--agent", "codex", "--source-kind", "pi", "--session", session, "--source-pane", "w1:p1", "--source-agent", "gentle-shell", "--prompt", "do something"], { env: { ...sb.env, PATH: `${bindir}:${process.env.PATH}` }, encoding: "utf8" });
 	assert.equal(res.status, 0, res.stderr);
 	const run = await until(() => runs(sb)[0]);
-	assert.match(run[3]!, /to act on now: haz algo$/);
+	assert.match(run[3]!, /to act on now: do something$/);
 });
 
 test("S3: --args-from-transcript reads the last /split of the Claude transcript (string content)", () => {
 	const sb = sandbox();
-	const rows = [hi, slashEntry("s1", "u", "pi old prompt"), slashEntry("s2", "s1", "gentle judge --name rev revisa el PR 4")];
+	const rows = [hi, slashEntry("s1", "u", "pi old prompt"), slashEntry("s2", "s1", "gentle judge --name rev only review PR 4")];
 	const res = fromTranscript(sb, rows);
 	assert.equal(res.status, 0, res.stderr);
 	assert.equal(res.stderr, "");
@@ -538,7 +538,7 @@ test("S3: --args-from-transcript reads the last /split of the Claude transcript 
 
 test("S3: --args-from-transcript reads content-array transcripts too", () => {
 	const sb = sandbox();
-	const res = fromTranscript(sb, [hi, slashEntry("s1", "u", "claude haz algo", "array")]);
+	const res = fromTranscript(sb, [hi, slashEntry("s1", "u", "claude do something", "array")]);
 	assert.equal(res.status, 0, res.stderr);
 	assert.match(sb.readCalls()[2]![3]!, /'--agent' 'claude' .* '--prompt-file' '[^']+'$/);
 });
