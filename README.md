@@ -90,6 +90,9 @@ Critique the plan discussed so far.
 - A project role only adds a new name: a project file named like a personal, `roles.json` or built-in role is ignored with a warning and your role wins, so a cloned repository cannot redefine `judge`.
 - A role file that cannot be used (empty body, bad file name, a name like an agent, unknown agent, malformed front-matter) does not stop other splits: it is ignored with `herdr-split: ignoring <file>: <reason>` on stderr and listed by `herdr-split roles`. Asking for it (`/split <name>`) exits 2 with that reason before any pane is touched.
 - The split notice names the file a role came from, and Pi's `/split` completions show it next to each role. In Pi, ignored role files are reported when `/split` runs and in the command description.
+- Only regular files of at most 64 KiB are read. A project role file that is a symlink is ignored (a cloned repository cannot point a role at a device or a file outside it); a personal one may be a symlink to a regular file. Directories, devices and FIFOs are never opened. Ignored files are reported like any invalid role file.
+- Control characters (C0/C1, except newline and tab in the body) are removed from role prompts, and from every file name, path and reason printed, so a role file cannot put terminal escape sequences on your screen.
+- An invalid personal role file hides the `roles.json` or built-in role of the same name: `/split <name>` exits 2 with the file's reason and `herdr-split roles` shows only the ignored line. An invalid project file never changes an existing role.
 
 ## What happens
 

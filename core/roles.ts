@@ -4,7 +4,7 @@
  * personal role files (`roles/<name>.md` next to it) override both, and project role files
  * (`<git root>/.herdr-split/roles/<name>.md`) may only add new names.
  */
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { listAgents, readConfigObject, UsageError, type Agent } from "./split.ts";
 
@@ -22,6 +22,13 @@ export interface SkippedRole {
 	name: string;
 	source: string;
 	reason: string;
+}
+
+const MAX_ROLE_FILE_BYTES = 64 * 1024;
+
+/** Text from role files must not reach a terminal with escape sequences: drop C0/C1 controls (keeping \n and \t when asked). */
+function stripControls(text: string, keepWhitespace = false): string {
+	return text.replace(keepWhitespace ? /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g : /[\u0000-\u001f\u007f-\u009f]/g, "");
 }
 
 export const NAME_PATTERN = "^[a-z][a-z0-9_-]{0,31}$";
@@ -68,14 +75,14 @@ function parseRoleFile(text: string, agents: Agent[]): { agent?: string; prompt:
 		}
 		body = lines.slice(end + 1);
 	}
-	const prompt = body.join("\n").trim();
+	const prompt = stripControls(body.join("\n"), true).trim();
 	if (!prompt) return "it has no prompt after the front-matter";
 	if (agent !== undefined && !agents.some((a) => a.name === agent)) return `it uses unknown agent "${agent}"`;
 	return { agent, prompt };
 }
 
 /** Every `<name>.md` in `dir`, parsed; a missing directory has none. */
-function readRoleDir(dir: string, agents: Agent[]): { roles: Role[]; skipped: SkippedRole[] } {
+function readRoleDir(dir: string, agents: Agent[], project: boolean): { roles: Role[]; skipped: SkippedRole[] } {
 	const roles: Role[] = [];
 	const skipped: SkippedRole[] = [];
 	let files: string[];
@@ -87,7 +94,7 @@ function readRoleDir(dir: string, agents: Agent[]): { roles: Role[]; skipped: Sk
 	for (const file of files) {
 		const name = file.slice(0, -".md".length);
 		const source = join(dir, file);
-		const skip = (reason: string) => skipped.push({ name, source, reason });
+		const skip = (reason: string) => skipped.push({ name: stripControls(name), source: stripControls(source), reason: stripControls(reason) });
 		if (!NAME_RE.test(name)) {
 			skip(`the file name must match ${NAME_PATTERN} plus .md`);
 			continue;
@@ -98,13 +105,27 @@ function readRoleDir(dir: string, agents: Agent[]): { roles: Role[]; skipped: Sk
 		}
 		let parsed;
 		try {
+			// Look before reading: a device or FIFO behind the name would hang readFileSync.
+			if (project && lstatSync(source).isSymbolicLink()) {
+				skip("it is a symlink; project role files must be regular files");
+				continue;
+			}
+			const info = statSync(source);
+			if (!info.isFile()) {
+				skip("it is not a regular file");
+				continue;
+			}
+			if (info.size > MAX_ROLE_FILE_BYTES) {
+				skip("it is larger than 64 KiB");
+				continue;
+			}
 			parsed = parseRoleFile(readFileSync(source, "utf8"), agents);
 		} catch (error) {
 			skip(`it cannot be read: ${(error as Error).message}`);
 			continue;
 		}
 		if (typeof parsed === "string") skip(parsed);
-		else roles.push({ name, agent: parsed.agent, prompt: parsed.prompt, source });
+		else roles.push({ name, agent: parsed.agent, prompt: parsed.prompt, source: stripControls(source) });
 	}
 	return { roles, skipped };
 }
@@ -133,14 +154,16 @@ export function loadRoles(rolesFile: string | undefined, agents: Agent[], cwd: s
 	}
 	const skipped: SkippedRole[] = [];
 	if (rolesFile) {
-		const personal = readRoleDir(join(dirname(rolesFile), "roles"), agents);
+		const personal = readRoleDir(join(dirname(rolesFile), "roles"), agents, false);
 		for (const { name, ...role } of personal.roles) roles[name] = role;
+		// An invalid personal file hides the lower role of its name rather than letting it quietly win.
+		for (const { name } of personal.skipped) if (Object.hasOwn(roles, name) && !personal.roles.some((r) => r.name === name)) delete roles[name];
 		skipped.push(...personal.skipped);
 	}
 	const root = gitRoot(cwd);
 	if (root) {
 		// Project files come with the repository, which may be someone else's: they never replace a role you have.
-		const project = readRoleDir(join(root, ".herdr-split", "roles"), agents);
+		const project = readRoleDir(join(root, ".herdr-split", "roles"), agents, true);
 		for (const { name, ...role } of project.roles) {
 			const existing = Object.hasOwn(roles, name) ? roles[name] : undefined;
 			if (existing) skipped.push({ name, source: role.source, reason: `a project role cannot replace the "${name}" role from ${existing.source}` });
