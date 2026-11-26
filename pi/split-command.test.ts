@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { slashUsage } from "../core/help.ts";
@@ -245,4 +245,42 @@ test("a malformed agents.json names the file once in the /split description", ()
 	const f = join(mkdtempSync(join(tmpdir(), "herdr-split-cfg-")), "agents.json");
 	writeFileSync(f, "{ not json");
 	assert.equal(splitCommandInfo(f).description.split(f).length, 2);
+});
+
+/** A git project with `.herdr-split/roles/<file>`. */
+function project(files: Record<string, string>): { root: string; dir: string } {
+	const root = mkdtempSync(join(tmpdir(), "herdr-split-pi-proj-"));
+	mkdirSync(join(root, ".git"));
+	const dir = join(root, ".herdr-split", "roles");
+	mkdirSync(dir, { recursive: true });
+	for (const [file, text] of Object.entries(files)) writeFileSync(join(dir, file), text);
+	return { root, dir };
+}
+
+test("S6: completions offer project role files with their source; the description reports ignored files", () => {
+	const { root, dir } = project({ "critic.md": "Critique.", "judge.md": "Hostile." });
+	const items = agentCompletions("", undefined, undefined, root)!;
+	assert.deepEqual(items.map((i) => [i.value, i.description]), [
+		["claude", undefined],
+		["codex", undefined],
+		["gentle", undefined],
+		["pi", undefined],
+		["critic", join(dir, "critic.md")],
+		["judge", "built-in"],
+	]);
+	const info = splitCommandInfo(undefined, undefined, root);
+	assert.ok(info.description.endsWith(` (ignoring ${join(dir, "judge.md")}: a project role cannot replace the "judge" role from built-in)`), info.description);
+	assert.deepEqual(info.getArgumentCompletions("cr")?.map((i) => i.value), ["critic"]);
+});
+
+test("S4: /split in Pi warns about ignored role files and still launches; an ignored role is refused", async () => {
+	const { root, dir } = project({ "critic.md": "Critique.", "ghost.md": "---\nagent: vim\n---\nx" });
+	const ok = deps({ cwd: root, pick: "2. second" });
+	await runSplit("critic", ok.d);
+	assert.deepEqual(ok.log.notify[0], [`ignoring ${join(dir, "ghost.md")}: it uses unknown agent "vim"`, "info"]);
+	assert.deepEqual(ok.log.launched[0]!.slice(0, 3), ["launch", "--agent", "critic"]);
+	const bad = deps({ cwd: root });
+	await runSplit("ghost", bad.d);
+	assert.deepEqual(bad.log.notify.at(-1), [`Role "ghost" cannot be used: ${join(dir, "ghost.md")}: it uses unknown agent "vim"`, "error"]);
+	assert.deepEqual(bad.log.launched, []);
 });

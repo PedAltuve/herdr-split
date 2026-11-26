@@ -2,7 +2,7 @@
 import { parseSplitCommand } from "../core/command.ts";
 import { readSession } from "../core/sessions.ts";
 import { slashUsage } from "../core/help.ts";
-import { checkName, listRoles, resolveTarget, type Role } from "../core/roles.ts";
+import { checkName, listRoles, loadRoles, resolveTarget, type Role } from "../core/roles.ts";
 import { listAgents, type Agent } from "../core/split.ts";
 
 /**
@@ -16,7 +16,7 @@ function reason(error: unknown, file: string | undefined): string {
 	return message.startsWith(prefix) ? message.slice(prefix.length) : message;
 }
 
-function hints(configFile: string | undefined, rolesFile: string | undefined): { agents: Agent[]; roles: Role[]; problem?: string } {
+function hints(configFile: string | undefined, rolesFile: string | undefined, cwd?: string): { agents: Agent[]; roles: Role[]; problem?: string } {
 	const problems: string[] = [];
 	let agents: Agent[];
 	try {
@@ -27,10 +27,12 @@ function hints(configFile: string | undefined, rolesFile: string | undefined): {
 	}
 	let roles: Role[];
 	try {
-		roles = listRoles(rolesFile, agents);
+		const loaded = loadRoles(rolesFile, agents, cwd);
+		roles = loaded.roles;
+		for (const s of loaded.skipped) problems.push(`ignoring ${s.source}: ${s.reason}`);
 	} catch (error) {
 		try {
-			roles = listRoles(undefined, agents);
+			roles = listRoles(undefined, agents, cwd);
 		} catch {
 			roles = [];
 		}
@@ -39,18 +41,21 @@ function hints(configFile: string | undefined, rolesFile: string | undefined): {
 	return { agents, roles, problem: problems.length ? problems.join("; ") : undefined };
 }
 
-/** What Pi registers for /split: description and completions both list the configured agents and roles. */
-export function splitCommandInfo(configFile: string | undefined, rolesFile?: string) {
-	const { agents, roles, problem } = hints(configFile, rolesFile);
+/**
+ * What Pi registers for /split: description and completions both list the configured agents and roles.
+ * Project roles come from the git root of `cwd` (default: the directory Pi runs in, read on each completion).
+ */
+export function splitCommandInfo(configFile: string | undefined, rolesFile?: string, cwd?: string) {
+	const { agents, roles, problem } = hints(configFile, rolesFile, cwd);
 	return {
 		description: `Branch this conversation into another agent in a new Herdr pane: ${slashUsage(agents, roles)}${problem ? ` (${problem})` : ""}`,
-		getArgumentCompletions: (prefix: string) => agentCompletions(prefix, configFile, rolesFile),
+		getArgumentCompletions: (prefix: string) => agentCompletions(prefix, configFile, rolesFile, cwd),
 	};
 }
 
-/** First word: agents and roles; second word (after an agent): roles. */
-export function agentCompletions(prefix: string, configFile?: string, rolesFile?: string): { value: string; label: string }[] | null {
-	const { agents, roles } = hints(configFile, rolesFile);
+/** First word: agents and roles; second word (after an agent): roles. A role's description is where it comes from. */
+export function agentCompletions(prefix: string, configFile?: string, rolesFile?: string, cwd?: string): { value: string; label: string; description?: string }[] | null {
+	const { agents, roles } = hints(configFile, rolesFile, cwd);
 	const words = prefix.split(/\s+/);
 	const last = words.pop()!;
 	const before = words.filter(Boolean);
@@ -58,7 +63,8 @@ export function agentCompletions(prefix: string, configFile?: string, rolesFile?
 	if (before.length === 0) names = [...agents.map((a) => a.name), ...roles.map((r) => r.name)];
 	else if (before.length === 1 && agents.some((a) => a.name === before[0])) names = roles.map((r) => r.name);
 	else return null;
-	const items = names.filter((n) => n.startsWith(last)).map((n) => ({ value: [...before, n].join(" "), label: n }));
+	const source = (n: string) => roles.find((r) => r.name === n && !agents.some((a) => a.name === n))?.source;
+	const items = names.filter((n) => n.startsWith(last)).map((n) => ({ value: [...before, n].join(" "), label: n, description: source(n) }));
 	return items.length ? items : null;
 }
 
@@ -68,6 +74,8 @@ export interface SplitDeps {
 	leafId: string | undefined;
 	configFile: string | undefined;
 	rolesFile?: string;
+	/** Where /split runs; project roles come from its git root (default: process.cwd()). */
+	cwd?: string;
 	select(title: string, options: string[]): Promise<string | undefined>;
 	notify(msg: string, level: "info" | "error"): void;
 	branch(sessionFile: string, cutId: string): string;
@@ -83,7 +91,9 @@ export async function runSplit(args: string, deps: SplitDeps): Promise<void> {
 		let parsed;
 		try {
 			const agents = listAgents(deps.configFile);
-			parsed = parseSplitCommand(args, agents, listRoles(deps.rolesFile, agents));
+			const { roles, skipped } = loadRoles(deps.rolesFile, agents, deps.cwd);
+			for (const s of skipped) deps.notify(`ignoring ${s.source}: ${s.reason}`, "info");
+			parsed = parseSplitCommand(args, agents, roles);
 		} catch (error) {
 			deps.notify(error instanceof Error ? error.message : String(error), "error");
 			return;
@@ -91,7 +101,7 @@ export async function runSplit(args: string, deps: SplitDeps): Promise<void> {
 		let first = parsed.agent;
 		if (!first) {
 			const agents = listAgents(deps.configFile);
-			const picked = await deps.select("Split into which agent or role?", [...agents.map((a) => a.name), ...listRoles(deps.rolesFile, agents).map((r) => r.name)]);
+			const picked = await deps.select("Split into which agent or role?", [...agents.map((a) => a.name), ...listRoles(deps.rolesFile, agents, deps.cwd).map((r) => r.name)]);
 			if (!picked) {
 				deps.notify("Split cancelled.", "info");
 				return;
@@ -101,7 +111,7 @@ export async function runSplit(args: string, deps: SplitDeps): Promise<void> {
 		let resolved;
 		try {
 			checkName(parsed.name);
-			resolved = resolveTarget({ agent: first, role: parsed.role }, deps.configFile, deps.rolesFile);
+			resolved = resolveTarget({ agent: first, role: parsed.role }, deps.configFile, deps.rolesFile, deps.cwd);
 		} catch (error) {
 			deps.notify(error instanceof Error ? error.message : String(error), "error");
 			return;
