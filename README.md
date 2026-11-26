@@ -33,7 +33,7 @@ Links `herdr-split` into `~/.local/bin`, adds the `/split` extension to your Pi 
 - From **Pi / gentle-shell**: a native picker asks for the branch point.
 - From **Claude Code**: the new pane opens an `fzf` picker for the branch point.
 - Text after the agent (and optional role and `--name`) is a [prompt](#prompt) for the new agent.
-- Without arguments, Pi asks for an agent or role and Claude Code replies with the usage. Both list the agents from `herdr-split agents` and the roles from `herdr-split roles`, including your `agents.json` and `roles.json` ones.
+- Without arguments, Pi asks for an agent or role and Claude Code replies with the usage. Both list the agents from `herdr-split agents` and the roles from `herdr-split roles`, including your `agents.json`, `roles.json` and [role files](#role-files).
 
 ## Prompt
 
@@ -68,6 +68,31 @@ A role is a name plus an instruction for the agent that gets the split, and opti
 ```
 
 `agent` is optional; `prompt` is required. A role named like an agent is a configuration error (exit 2) that names it.
+
+### Role files
+
+A longer role fits better in a Markdown file, one per role, named `<name>.md`:
+
+- Personal: `~/.config/herdr-split/roles/<name>.md` (or under `$XDG_CONFIG_HOME`), next to `roles.json`.
+- Project: `<git root>/.herdr-split/roles/<name>.md`, where the git root is the nearest directory with a `.git` above the directory `/split` runs in (the source conversation's). Outside a git repository there are no project roles.
+
+```md
+---
+agent: claude
+---
+Critique the plan discussed so far.
+
+- List its weakest assumptions, one finding per line, each one usable on its own.
+```
+
+- The whole body after the optional front-matter is the role's instruction (collapsed to one line in the notice, like a prompt, and in `herdr-split roles`). The front-matter takes only `agent`; without it the role splits into the source agent.
+- Order: a personal role file overrides `roles.json`, which overrides the built-ins.
+- A project role only adds a new name: a project file named like a personal, `roles.json` or built-in role is ignored with a warning and your role wins, so a cloned repository cannot redefine `judge`.
+- A role file that cannot be used (empty body, bad file name, a name like an agent, unknown agent, malformed front-matter) does not stop other splits: it is ignored with `herdr-split: ignoring <file>: <reason>` on stderr and listed by `herdr-split roles`. Asking for it (`/split <name>`) exits 2 with that reason before any pane is touched.
+- The split notice names the file a role came from, and Pi's `/split` completions show it next to each role. In Pi, ignored role files are reported when `/split` runs and in the command description.
+- Only regular files of at most 64 KiB are read. A project role file that is a symlink is ignored, and when `.herdr-split` or `.herdr-split/roles` is itself a symlink no project roles are read (listed by `herdr-split roles` as `*` with the reason), so a cloned repository cannot point a role at a device or a file outside it; a personal role file may be a symlink to a regular file. Directories, devices and FIFOs are never opened. Ignored files are reported like any invalid role file.
+- Control characters (C0/C1, except newline and tab in the body) are removed from role prompts, and from every file name, path and reason printed, so a role file cannot put terminal escape sequences on your screen.
+- An invalid personal role file hides the `roles.json` or built-in role of the same name: `/split <name>` exits 2 with the file's reason and `herdr-split roles` shows only the ignored line. An invalid project file never changes an existing role.
 
 ## What happens
 
@@ -142,7 +167,7 @@ herdr-split help [--json | --slash]
 - `launch`: Split at a branch point the adapter already chose (Pi).
 - `split`: Split and pick the branch point with fzf in the new pane (Claude Code).
 - `agents`: List the known agents and the command each one runs.
-- `roles`: List the known roles, the agent each uses and its prompt.
+- `roles`: List the known roles (name, agent, prompt, source), then the ignored role files and why.
 - `help`: Show this help, as JSON, or as the /split usage line.
 
 `--agent` is required unless `--role` is given; it may name an agent or a role. `--role` adds a role to an agent (alone, it uses the role's agent); `--name` names the split; `--prompt` sends the new agent an instruction (see [Prompt](#prompt)); `--args-from-transcript` (Claude Code, replaces `--agent`) reads all of these from the last `/split` in the transcript and cannot be combined with them. `--name` and `--role` can each be given once. A malformed `agents.json` or `roles.json` exits 2 with `Cannot read <path>: <reason>`.

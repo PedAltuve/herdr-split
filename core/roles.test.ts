@@ -21,10 +21,11 @@ test("the built-in judge role runs the judgment-day skill with gentle", () => {
 });
 
 test("roles.json adds roles and overrides built-ins, sorted by name", () => {
-	const roles = listRoles(rolesFile({ critic: { prompt: "Critique." }, judge: { agent: "claude", prompt: "Mine." } }), listAgents());
+	const file = rolesFile({ critic: { prompt: "Critique." }, judge: { agent: "claude", prompt: "Mine." } });
+	const roles = listRoles(file, listAgents());
 	assert.deepEqual(roles, [
-		{ name: "critic", agent: undefined, prompt: "Critique." },
-		{ name: "judge", agent: "claude", prompt: "Mine." },
+		{ name: "critic", agent: undefined, prompt: "Critique.", source: file },
+		{ name: "judge", agent: "claude", prompt: "Mine.", source: file },
 	]);
 });
 

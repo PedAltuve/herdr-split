@@ -72,10 +72,11 @@ export function shellQuote(value: string): string {
 
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 
-function ending(opts: { role?: { name: string; prompt: string }; prompt?: string }): string[] {
+function ending(opts: { role?: { name: string; prompt: string; source?: string }; prompt?: string }): string[] {
 	const prompt = opts.prompt ? oneLine(opts.prompt) : "";
 	if (opts.role) {
-		const role = `Your role in this split is "${opts.role.name}". Do this now: ${oneLine(opts.role.prompt)}`;
+		const from = opts.role.source && opts.role.source !== "built-in" ? `, defined in ${opts.role.source}` : "";
+		const role = `Your role in this split is "${opts.role.name}"${from}. Do this now: ${oneLine(opts.role.prompt)}`;
 		return [prompt ? `${role} Additional instruction from the user, to act on now: ${prompt}` : role];
 	}
 	return [prompt ? `The user's instruction for you in this split, to act on now: ${prompt}` : "Reply with one short line confirming you understand, then wait for the user's next instruction."];
@@ -87,8 +88,8 @@ export function splitNotice(opts: {
 	cwd: string;
 	transcript?: string;
 	name?: string;
-	/** Its prompt replaces the "confirm and wait" ending. */
-	role?: { name: string; prompt: string };
+	/** Its prompt replaces the "confirm and wait" ending; a source other than "built-in" is named. */
+	role?: { name: string; prompt: string; source?: string };
 	/** The user's instruction to act on now; with a role it follows the role's instruction. */
 	prompt?: string;
 }): string {

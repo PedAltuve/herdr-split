@@ -12,7 +12,7 @@ import { parseArgs } from "node:util";
 import { normalizePrompt, parseSplitCommand } from "./command.ts";
 import { helpJson, helpText, slashUsage, usageLine } from "./help.ts";
 import { lastSplitArgs, readSession, type SourceKind } from "./sessions.ts";
-import { checkName, listRoles, resolveTarget, sourceAgentFor, type Role } from "./roles.ts";
+import { checkName, loadRoles, resolveTarget, sourceAgentFor, type Role } from "./roles.ts";
 import {
 	listAgents,
 	openSplitPane,
@@ -44,9 +44,23 @@ function configFile(file = "agents.json"): string {
 	return join(base, "herdr-split", file);
 }
 
+const warned = new Set<string>();
+
+/** The usable roles; each role file that was skipped is reported once on stderr and the command goes on. */
+function rolesWithWarnings(agents: Agent[]): Role[] {
+	const { roles, skipped } = loadRoles(configFile("roles.json"), agents);
+	for (const s of skipped) {
+		const line = `herdr-split: ignoring ${s.source}: ${s.reason}`;
+		if (!warned.has(line)) console.error(line);
+		warned.add(line);
+	}
+	return roles;
+}
+
 /** The agent, role and name a command was asked for; every config and name error surfaces here, before any pane operation. */
 function target(values: Values): { agent?: Agent; role?: Role; name?: string } {
 	const name = checkName(values.name);
+	rolesWithWarnings(listAgents(configFile()));
 	const { agent, role } = resolveTarget({ agent: values.agent, role: values.role }, configFile(), configFile("roles.json"));
 	return { agent, role, name: name ?? role?.name };
 }
@@ -176,7 +190,7 @@ function argsFromTranscript(values: Values, kind: SourceKind, file: string): Val
 	if (kind !== "claude") throw new UsageError("--args-from-transcript needs --source-kind claude");
 	const args = lastSplitArgs(readSession(kind, file));
 	const agents = listAgents(configFile());
-	const roles = listRoles(configFile("roles.json"), agents);
+	const roles = rolesWithWarnings(agents);
 	const usage = `usage: ${slashUsage(agents, roles)}`;
 	if (args === undefined) throw new UsageError(`The last user message in the Claude Code transcript is not a /split invocation\nherdr-split: ${usage}`);
 	if (!args.trim()) throw new UsageError(usage);
@@ -297,7 +311,7 @@ export async function main(argv: string[]): Promise<number> {
 		if (values.json && values.slash) throw new UsageError("--json and --slash cannot be combined");
 		if (command === "help" || values.help) {
 			const agents = listAgents(configFile());
-			const roles = listRoles(configFile("roles.json"), agents);
+			const roles = rolesWithWarnings(agents);
 			if (values.json) console.log(JSON.stringify(helpJson(agents, roles), null, 2));
 			else if (values.slash) console.log(`herdr-split: usage: ${slashUsage(agents, roles)}`);
 			else process.stdout.write(helpText(agents, roles));
@@ -306,7 +320,13 @@ export async function main(argv: string[]): Promise<number> {
 		else if (command === "pick") return await pick(values);
 		else if (command === "notify") await notify(values);
 		else if (command === "roles") {
-			for (const r of listRoles(configFile("roles.json"), listAgents(configFile()))) console.log(`${r.name}\t${r.agent ?? "-"}\t${r.prompt}`);
+			const rolesFile = configFile("roles.json");
+			const { roles, skipped } = loadRoles(rolesFile, listAgents(configFile()));
+			for (const s of skipped) console.error(`herdr-split: ignoring ${s.source}: ${s.reason}`);
+			// A role file's body is Markdown over several lines; roles.json and built-in prompts stay as they are.
+			const shown = (r: Role) => (r.source === "built-in" || r.source === rolesFile ? r.prompt : r.prompt.replace(/\s+/g, " ").trim());
+			for (const r of roles) console.log(`${r.name}\t${r.agent ?? "-"}\t${shown(r)}\t${r.source}`);
+			for (const s of skipped) console.log(`${s.name}\t-\tignored: ${s.reason}\t${s.source}`);
 		} else if (command === "agents") {
 			for (const a of listAgents(configFile())) console.log(`${a.name}\t${a.exec}`);
 		} else throw new UsageError(`${usageLine()}${command ? ` (unknown command "${command}")` : ""}`);

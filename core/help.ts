@@ -77,7 +77,7 @@ export const COMMANDS: CommandDoc[] = [
 		options: [{ name: "agent" }, { name: "source-kind", required: true }, { name: "session" }, { name: "session-id" }, { name: "args-from-transcript" }, ...SPLIT_OPTIONS],
 	},
 	{ name: "agents", synopsis: ["herdr-split agents"], summary: "List the known agents and the command each one runs.", options: [] },
-	{ name: "roles", synopsis: ["herdr-split roles"], summary: "List the known roles, the agent each uses and its prompt.", options: [] },
+	{ name: "roles", synopsis: ["herdr-split roles"], summary: "List the known roles (name, agent, prompt, source), then the ignored role files and why.", options: [] },
 	{
 		name: "help",
 		synopsis: ["herdr-split help [--json | --slash]"],
@@ -160,6 +160,6 @@ export function helpJson(agents: Agent[], roles: Role[]) {
 			}),
 		})),
 		agents: agents.map((a) => ({ name: a.name, exec: a.exec, format: a.format })),
-		roles: roles.map((r) => ({ name: r.name, agent: r.agent, prompt: r.prompt })),
+		roles: roles.map((r) => ({ name: r.name, agent: r.agent, prompt: r.prompt, source: r.source })),
 	};
 }

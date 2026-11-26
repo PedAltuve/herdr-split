@@ -45,6 +45,7 @@ export default function (pi: ExtensionAPI) {
 				leafId: ctx.sessionManager.getLeafId() ?? undefined,
 				configFile,
 				rolesFile,
+				cwd: ctx.cwd,
 				select: (title, options) => ctx.ui.select(title, options),
 				notify: (msg, level) => ctx.ui.notify(msg, level),
 				// A separate manager keeps the live session untouched.

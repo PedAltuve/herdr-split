@@ -363,7 +363,7 @@ test("S1 preserve: valid roles.json and agents.json still work together", () => 
 	writeConfig(sb, "roles.json", { critic: { agent: "opencode", prompt: "Critique." } });
 	const res = spawnSync(BIN, ["roles"], { env: sb.env, encoding: "utf8" });
 	assert.equal(res.status, 0, res.stderr);
-	assert.match(res.stdout, /^critic\topencode\tCritique\.\n/);
+	assert.match(res.stdout, /^critic\topencode\tCritique\.\t\S*roles\.json\n/);
 });
 
 test("S2: repeating --name or --role exits 2 before any pane operation", () => {
@@ -757,4 +757,100 @@ test("S1: /split gentle --security from the transcript is a prompt, not an error
 	const res = fromTranscript(sb, [hi, slashEntry("s1", "u", "gentle --security")]);
 	assert.equal(res.status, 0, res.stderr);
 	assert.match(sb.readCalls()[2]![3]!, /'--agent' 'gentle' .* '--prompt-file' '[^']+'$/);
+});
+
+/** A git project with `.herdr-split/roles/<file>`; the CLI runs inside it. */
+function projectWith(sb: ReturnType<typeof sandbox>, files: Record<string, string>): string {
+	const root = join(sb.dir, "proj");
+	mkdirSync(join(root, ".git"), { recursive: true });
+	mkdirSync(join(root, ".herdr-split", "roles"), { recursive: true });
+	for (const [file, text] of Object.entries(files)) writeFileSync(join(root, ".herdr-split", "roles", file), text);
+	return root;
+}
+
+test("S2/S5: a project role file runs with its agent and body; the notice names the file", async () => {
+	const sb = sandbox();
+	const root = projectWith(sb, { "critic.md": "---\nagent: claude\n---\nReview the plan.\n\nEach finding stands alone.\n" });
+	const file = join(root, ".herdr-split", "roles", "critic.md");
+	const res = spawnSync(BIN, launchArgs(sb, "--agent", "critic"), { env: sb.env, encoding: "utf8", cwd: root });
+	assert.equal(res.status, 0, res.stderr);
+	assert.equal(res.stderr, "");
+	assert.equal(JSON.parse(res.stdout).agent, "claude");
+	const notice = (await until(() => runs(sb)[1]))[3]!;
+	assert.ok(notice.includes(`Your role in this split is "critic", defined in ${file}. Do this now: Review the plan. Each finding stands alone.`), notice);
+});
+
+test("S5: a built-in role's notice names no file", async () => {
+	const sb = sandbox();
+	const res = spawnSync(BIN, launchArgs(sb, "--agent", "judge", "--branched", piSession(sb.dir)), { env: sb.env, encoding: "utf8" });
+	assert.equal(res.status, 0, res.stderr);
+	const notice = (await until(() => runs(sb)[1]))[3]!;
+	assert.match(notice, /Your role in this split is "judge"\. Do this now: /);
+});
+
+test("S3/S4: skipped role files warn on stderr once and the split still runs", () => {
+	const sb = sandbox();
+	const root = projectWith(sb, { "judge.md": "Hostile.", "ghost.md": "---\nagent: vim\n---\nx" });
+	const dir = join(root, ".herdr-split", "roles");
+	const res = spawnSync(BIN, launchArgs(sb, "--agent", "claude"), { env: sb.env, encoding: "utf8", cwd: root });
+	assert.equal(res.status, 0, res.stderr);
+	assert.equal(
+		res.stderr,
+		`herdr-split: ignoring ${join(dir, "ghost.md")}: it uses unknown agent "vim"\nherdr-split: ignoring ${join(dir, "judge.md")}: a project role cannot replace the "judge" role from built-in\n`,
+	);
+});
+
+test("S4: asking for an invalid role file exits 2 naming it, before any pane operation", () => {
+	const sb = sandbox();
+	const root = projectWith(sb, { "ghost.md": "---\nagent: vim\n---\nx" });
+	const file = join(root, ".herdr-split", "roles", "ghost.md");
+	const res = spawnSync(BIN, launchArgs(sb, "--agent", "ghost"), { env: sb.env, encoding: "utf8", cwd: root });
+	assert.equal(res.status, 2);
+	assert.equal(res.stdout, "");
+	assert.equal(res.stderr, `herdr-split: ignoring ${file}: it uses unknown agent "vim"\nherdr-split: Role "ghost" cannot be used: ${file}: it uses unknown agent "vim"\n`);
+	assert.deepEqual(sb.readCalls(), []);
+});
+
+test("S6: roles lists each role's source and the skipped role files", () => {
+	const sb = sandbox();
+	writeConfig(sb, "roles.json", { critic: { prompt: "Critique the plan." } });
+	const personal = join(sb.env.XDG_CONFIG_HOME, "herdr-split", "roles");
+	mkdirSync(personal, { recursive: true });
+	writeFileSync(join(personal, "notes.md"), "Take notes.\n\n- short\n");
+	const root = projectWith(sb, { "fresh.md": "---\nagent: pi\n---\nNew.", "ghost.md": "---\nagent: vim\n---\nx" });
+	const dir = join(root, ".herdr-split", "roles");
+	const res = spawnSync(BIN, ["roles"], { env: sb.env, encoding: "utf8", cwd: root });
+	assert.equal(res.status, 0, res.stderr);
+	assert.equal(res.stderr, `herdr-split: ignoring ${join(dir, "ghost.md")}: it uses unknown agent "vim"\n`);
+	assert.equal(
+		res.stdout,
+		[
+			`critic\t-\tCritique the plan.\t${join(sb.env.XDG_CONFIG_HOME, "herdr-split", "roles.json")}`,
+			`fresh\tpi\tNew.\t${join(dir, "fresh.md")}`,
+			"judge\tgentle\tRun the judgment-day skill for an adversarial review of the pull request discussed in this conversation, and report its verdict.\tbuilt-in",
+			`notes\t-\tTake notes. - short\t${join(personal, "notes.md")}`,
+			`ghost\t-\tignored: it uses unknown agent "vim"\t${join(dir, "ghost.md")}`,
+			"",
+		].join("\n"),
+	);
+});
+
+test("S6: help --json gives each role's source", () => {
+	const sb = sandbox();
+	const root = projectWith(sb, { "fresh.md": "New." });
+	const res = spawnSync(BIN, ["help", "--json"], { env: sb.env, encoding: "utf8", cwd: root });
+	assert.equal(res.status, 0, res.stderr);
+	assert.deepEqual(JSON.parse(res.stdout).roles.map((r: { name: string; source: string }) => [r.name, r.source]), [
+		["fresh", join(root, ".herdr-split", "roles", "fresh.md")],
+		["judge", "built-in"],
+	]);
+});
+
+test("roles keeps a roles.json prompt byte for byte; only role-file prompts are collapsed", () => {
+	const sb = sandbox();
+	writeConfig(sb, "roles.json", { json: { prompt: "first\nsecond\tthird" } });
+	const res = spawnSync(BIN, ["roles"], { env: sb.env, encoding: "utf8" });
+	assert.equal(res.status, 0, res.stderr);
+	assert.equal(res.stderr, "");
+	assert.ok(res.stdout.startsWith(`json\t-\tfirst\nsecond\tthird\t${join(sb.env.XDG_CONFIG_HOME, "herdr-split", "roles.json")}\n`), res.stdout);
 });
