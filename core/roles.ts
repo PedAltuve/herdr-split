@@ -81,20 +81,33 @@ function parseRoleFile(text: string, agents: Agent[]): { agent?: string; prompt:
 	return { agent, prompt };
 }
 
+function isSymlink(path: string): boolean {
+	try {
+		return lstatSync(path).isSymbolicLink();
+	} catch {
+		return false;
+	}
+}
+
 /** Every `<name>.md` in `dir`, parsed; a missing directory has none. */
-function readRoleDir(dir: string, agents: Agent[], project: boolean): { roles: Role[]; skipped: SkippedRole[] } {
+function readRoleDir(dir: string, agents: Agent[], project: boolean): { roles: Role[]; skipped: SkippedRole[]; invalidNames: string[] } {
 	const roles: Role[] = [];
 	const skipped: SkippedRole[] = [];
+	/** Valid role names whose file was skipped (a bad file name is never one). */
+	const invalidNames: string[] = [];
 	let files: string[];
 	try {
 		files = readdirSync(dir).filter((f) => f.endsWith(".md")).sort();
 	} catch {
-		return { roles, skipped };
+		return { roles, skipped, invalidNames };
 	}
 	for (const file of files) {
 		const name = file.slice(0, -".md".length);
 		const source = join(dir, file);
-		const skip = (reason: string) => skipped.push({ name: stripControls(name), source: stripControls(source), reason: stripControls(reason) });
+		const skip = (reason: string) => {
+			skipped.push({ name: stripControls(name), source: stripControls(source), reason: stripControls(reason) });
+			if (NAME_RE.test(name)) invalidNames.push(name);
+		};
 		if (!NAME_RE.test(name)) {
 			skip(`the file name must match ${NAME_PATTERN} plus .md`);
 			continue;
@@ -127,7 +140,7 @@ function readRoleDir(dir: string, agents: Agent[], project: boolean): { roles: R
 		if (typeof parsed === "string") skip(parsed);
 		else roles.push({ name, agent: parsed.agent, prompt: parsed.prompt, source: stripControls(source) });
 	}
-	return { roles, skipped };
+	return { roles, skipped, invalidNames };
 }
 
 /**
@@ -157,11 +170,14 @@ export function loadRoles(rolesFile: string | undefined, agents: Agent[], cwd: s
 		const personal = readRoleDir(join(dirname(rolesFile), "roles"), agents, false);
 		for (const { name, ...role } of personal.roles) roles[name] = role;
 		// An invalid personal file hides the lower role of its name rather than letting it quietly win.
-		for (const { name } of personal.skipped) if (Object.hasOwn(roles, name) && !personal.roles.some((r) => r.name === name)) delete roles[name];
+		for (const name of personal.invalidNames) if (Object.hasOwn(roles, name)) delete roles[name];
 		skipped.push(...personal.skipped);
 	}
 	const root = gitRoot(cwd);
-	if (root) {
+	// A symlinked .herdr-split or roles directory could point outside the repository: project roles are then not read at all.
+	const linked = root && [join(root, ".herdr-split"), join(root, ".herdr-split", "roles")].find((d) => isSymlink(d));
+	if (root && linked) skipped.push({ name: "*", source: stripControls(linked), reason: "it is a symlink; project role directories must be real directories" });
+	else if (root) {
 		// Project files come with the repository, which may be someone else's: they never replace a role you have.
 		const project = readRoleDir(join(root, ".herdr-split", "roles"), agents, true);
 		for (const { name, ...role } of project.roles) {

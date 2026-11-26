@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -192,14 +192,40 @@ test("S8: control characters are stripped from prompts (newline and tab kept) an
 });
 
 test("S8: the CLI prints no control characters from role files on stdout or stderr", () => {
-	const f = fixture({ personal: { "bad.md": `---\n${OSC}agent: x\n---\nBody`, [`esc\u001b[31m.md`]: "Hello" } });
-	const { roles, skipped } = loadRoles(f.rolesFile, listAgents(), f.cwd);
-	for (const s of skipped) {
-		const line = `herdr-split: ignoring ${s.source}: ${s.reason}\n${s.name}\t-\tignored: ${s.reason}\t${s.source}`;
-		assert.equal(line.includes("\u001b"), false);
-		assert.equal(line.includes("\u0007"), false);
+	const f = fixture({ project: { "bad.md": `---\n${OSC}agent: x\n---\nBody`, "ok.md": `Hello ${OSC}`, [`esc\u001b[31m.md`]: "Hello" } });
+	const bin = join(dirname(new URL(import.meta.url).pathname), "..", "bin", "herdr-split");
+	const env = { ...process.env, XDG_CONFIG_HOME: dirname(dirname(f.rolesFile)) };
+	const roles = spawnSync(bin, ["roles"], { cwd: f.cwd, env, encoding: "utf8" });
+	assert.equal(roles.status, 0, roles.stderr);
+	assert.match(roles.stdout, /^ok\t-\tHello \]52;c;aGk=\t/m);
+	assert.equal((roles.stderr.match(/^herdr-split: ignoring /gm) ?? []).length, 2);
+	const help = spawnSync(bin, ["help", "--json"], { cwd: f.cwd, env, encoding: "utf8" });
+	assert.equal(help.status, 0, help.stderr);
+	for (const out of [roles.stdout, roles.stderr, help.stdout, help.stderr]) assert.doesNotMatch(out, /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/);
+});
+
+test("S7: a project .herdr-split or roles directory that is a symlink is not read", () => {
+	const outside = mkdtempSync(join(tmpdir(), "herdr-split-outside-"));
+	mkdirSync(join(outside, "roles"));
+	writeFileSync(join(outside, "roles", "leak.md"), "SECRET");
+	for (const link of [".herdr-split", join(".herdr-split", "roles")]) {
+		const f = fixture();
+		execFileSync("rm", ["-rf", join(f.project, ".herdr-split")]);
+		if (link === ".herdr-split") symlinkSync(outside, join(f.project, ".herdr-split"));
+		else {
+			mkdirSync(join(f.project, ".herdr-split"));
+			symlinkSync(join(outside, "roles"), join(f.project, ".herdr-split", "roles"));
+		}
+		const { roles, skipped } = loadRoles(f.rolesFile, listAgents(), f.cwd);
+		assert.deepEqual(roles.map((r) => r.name), ["judge"], link);
+		assert.deepEqual(skipped, [{ name: "*", source: join(f.project, link), reason: "it is a symlink; project role directories must be real directories" }], link);
 	}
-	assert.ok(roles.length >= 1);
+});
+
+test("S9: a personal file whose name only matches after control characters are removed hides nothing", () => {
+	const f = fixture({ personal: { [`jud\u001bge.md`]: "x" } });
+	const { roles } = loadRoles(f.rolesFile, listAgents(), f.cwd);
+	assert.equal(roles.find((r) => r.name === "judge")?.source, "built-in");
 });
 
 test("S9: an invalid personal role file hides the roles.json or built-in role of the same name", () => {
@@ -215,4 +241,5 @@ test("S9: an invalid project role file does not hide an existing role", () => {
 	const f = fixture({ project: { "judge.md": "" } });
 	const { roles } = loadRoles(f.rolesFile, listAgents(), f.cwd);
 	assert.equal(roles.find((r) => r.name === "judge")?.source, "built-in");
+	assert.equal(resolveTarget({ agent: "judge" }, undefined, f.rolesFile, f.cwd).role?.source, "built-in");
 });
