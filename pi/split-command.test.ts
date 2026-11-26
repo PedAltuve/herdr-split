@@ -153,15 +153,15 @@ test("/split gentle --name reviewer passes the name to the core", async () => {
 
 test("S1: /split gentle <prompt> passes the prompt to the core with --prompt, after the name", async () => {
 	const { d, log, file } = deps();
-	await runSplit("gentle --name rev haz un judge\ndel PR X", d);
-	assert.deepEqual(log.launched, [["launch", "--agent", "gentle", "--source-kind", "pi", "--session", file, "--cut", "a2", "--branched", "/sessions/branched.jsonl", "--name", "rev", "--prompt", "haz un judge del PR X"]]);
+	await runSplit("gentle --name rev run a judge\non PR X", d);
+	assert.deepEqual(log.launched, [["launch", "--agent", "gentle", "--source-kind", "pi", "--session", file, "--cut", "a2", "--branched", "/sessions/branched.jsonl", "--name", "rev", "--prompt", "run a judge on PR X"]]);
 	assert.deepEqual(log.notify, [["Split opened in pane w1:p5 with gentle.", "info"]]);
 });
 
 test("S1: /split gentle judge <prompt> keeps the role and sends the prompt; a non-role second word is prompt", async () => {
 	const withRole = deps();
-	await runSplit("claude judge revisa el PR", withRole.d);
-	assert.deepEqual(withRole.log.launched, [["launch", "--agent", "claude", "--role", "judge", "--source-kind", "pi", "--session", withRole.file, "--cut", "a2", "--prompt", "revisa el PR"]]);
+	await runSplit("claude judge only review the PR", withRole.d);
+	assert.deepEqual(withRole.log.launched, [["launch", "--agent", "claude", "--role", "judge", "--source-kind", "pi", "--session", withRole.file, "--cut", "a2", "--prompt", "only review the PR"]]);
 	const noRole = deps();
 	await runSplit("claude nope at all", noRole.d);
 	assert.deepEqual(noRole.log.launched, [["launch", "--agent", "claude", "--source-kind", "pi", "--session", noRole.file, "--cut", "a2", "--prompt", "nope at all"]]);

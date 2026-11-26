@@ -21,8 +21,8 @@ test("S1: an agent or role alone, with or without a role, a name and a prompt", 
 });
 
 test("S1: the second word is a role only when it names a known role, otherwise it starts the prompt", () => {
-	assert.deepEqual(parse("gentle haz un judge del PR X"), { agent: "gentle", prompt: "haz un judge del PR X" });
-	assert.deepEqual(parse("gentle judge revisa el PR 4"), { agent: "gentle", role: "judge", prompt: "revisa el PR 4" });
+	assert.deepEqual(parse("gentle run a judge on PR X"), { agent: "gentle", prompt: "run a judge on PR X" });
+	assert.deepEqual(parse("gentle judge only review PR 4"), { agent: "gentle", role: "judge", prompt: "only review PR 4" });
 	// a first word that is a role has no second role: the rest is the prompt
 	assert.deepEqual(parse("judge judge the PR"), { agent: "judge", prompt: "judge the PR" });
 	// an unknown first word is left for the caller to reject
@@ -32,13 +32,13 @@ test("S1: the second word is a role only when it names a known role, otherwise i
 });
 
 test("S1: --name is read only before the prompt; from the first prompt word on everything is literal", () => {
-	assert.deepEqual(parse("gentle --name rev haz algo"), { agent: "gentle", name: "rev", prompt: "haz algo" });
-	assert.deepEqual(parse("gentle haz --name x algo"), { agent: "gentle", prompt: "haz --name x algo" });
+	assert.deepEqual(parse("gentle --name rev do something"), { agent: "gentle", name: "rev", prompt: "do something" });
+	assert.deepEqual(parse("gentle do --name x something"), { agent: "gentle", prompt: "do --name x something" });
 	assert.deepEqual(parse("gentle go --bogus"), { agent: "gentle", prompt: "go --bogus" });
 });
 
 test("S2: the prompt is collapsed to one line", () => {
-	assert.deepEqual(parse("gentle  haz\n\n  esto \t y   aquello\n"), { agent: "gentle", prompt: "haz esto y aquello" });
+	assert.deepEqual(parse("gentle  do\n\n  this \t and   that\n"), { agent: "gentle", prompt: "do this and that" });
 });
 
 test("S2: a prompt longer than the limit is rejected, the limit itself is accepted", () => {
@@ -56,7 +56,7 @@ test("S1 preserve: the errors the old Pi parser gave still hold", () => {
 
 test("S1: any other word starting with - starts the prompt; --name stays the only option before it", () => {
 	assert.deepEqual(parse("gentle --security"), { agent: "gentle", prompt: "--security" });
-	assert.deepEqual(parse("gentle --bogus=1 revisa"), { agent: "gentle", prompt: "--bogus=1 revisa" });
+	assert.deepEqual(parse("gentle --bogus=1 review"), { agent: "gentle", prompt: "--bogus=1 review" });
 	assert.deepEqual(parse("gentle -x y"), { agent: "gentle", prompt: "-x y" });
 	assert.deepEqual(parse("gentle --name rev --security"), { agent: "gentle", name: "rev", prompt: "--security" });
 	assert.deepEqual(parse("gentle judge --security"), { agent: "gentle", role: "judge", prompt: "--security" });
